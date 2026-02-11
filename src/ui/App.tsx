@@ -41,11 +41,7 @@ function AppContent() {
 
   const renderMain = () => {
     if (state.status === "loading") {
-      return (
-        <Box flexDirection="column" padding={1}>
-          <Spinner label="Loading" />
-        </Box>
-      );
+      return <Spinner label="Loading" />;
     }
     if (state.status === "missing") {
       return <ConfigSetup onComplete={setConfig} />;
