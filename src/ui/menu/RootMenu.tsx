@@ -28,7 +28,7 @@ export default function RootMenu({ onSelect }: Props) {
   }
   return state.status === "ready" ? (
     <MenuBox flexDirection="column" padding={1}>
-      <Text color="yellow">TenZero CLI [{state.config.name}]</Text>
+      <Text color="yellow">Main Menu</Text>
       <Text>Choose an option:</Text>
       <Box marginTop={1}>
         <Select

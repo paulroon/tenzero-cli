@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { Box, Text, useInput, useApp } from "ink";
 import { Spinner } from "@inkjs/ui";
-import { CurrentProjectProvider, useCurrentProject } from "@/contexts/CurrentProjectContext";
+import {
+  CurrentProjectProvider,
+  useCurrentProject,
+} from "@/contexts/CurrentProjectContext";
 import { InputModeProvider, useInputMode } from "@/contexts/InputModeContext";
 import { useConfig } from "@/hooks/useConfig";
+import AppLayout from "@/ui/components/AppLayout";
 import ConfigSetup from "@/ui/ConfigSetup";
 import System from "@/ui/System";
 import ProjectScreen from "@/ui/ProjectScreen";
@@ -34,59 +38,70 @@ function AppContent() {
     { isActive: true }
   );
 
-  return (
-    <System>
-      {state.status === "loading" ? (
+  const renderMain = () => {
+    if (state.status === "loading") {
+      return (
         <Box flexDirection="column" padding={1}>
-          <Text color="yellow">TenZero CLI</Text>
           <Spinner label="Loading" />
         </Box>
-      ) : state.status === "missing" ? (
-        <>
-          <ConfigSetup onComplete={setConfig} />
-          <Box marginTop={1}>
-            <Text dimColor>(x) exit</Text>
-          </Box>
-        </>
-      ) : currentProject ? (
-        <>
-          <Box flexDirection="column" padding={1}>
-            <ProjectScreen onBack={() => setScreen(ROOT_MENU_SCREEN)} />
-          </Box>
-          <Box marginTop={1} flexShrink={0}>
-            <Text dimColor>(x) exit  (b) back  (Esc) back</Text>
-          </Box>
-        </>
-      ) : (
-        <>
-          {screen === ROOT_MENU_SCREEN && (
-            <RootMenu onSelect={(value) => setScreen(value)} />
-          )}
-          {screen !== ROOT_MENU_SCREEN && state.status === "ready" && (
-            <Box flexDirection="column" padding={1}>
-              {(() => {
-                const Handler = menuHandlers[screen];
-                const { config } = state;
-                return (
-                  <Handler
-                    config={config}
-                    onBack={() => setScreen(ROOT_MENU_SCREEN)}
-                    projectDirectory={config.projectDirectory}
-                    onConfigUpdate={setConfig}
-                    onProjectSelect={(path) => setCurrentProjectFromPath(path)}
-                  />
-                );
-              })()}
-            </Box>
-          )}
-          <Box marginTop={1} flexShrink={0}>
-            <Text dimColor>
-              (x) exit
-              {screen !== ROOT_MENU_SCREEN ? "  (b) back  (Esc) back" : ""}
-            </Text>
-          </Box>
-        </>
-      )}
+      );
+    }
+    if (state.status === "missing") {
+      return <ConfigSetup onComplete={setConfig} />;
+    }
+    if (currentProject) {
+      return <ProjectScreen onBack={() => setScreen(ROOT_MENU_SCREEN)} />;
+    }
+    if (screen === ROOT_MENU_SCREEN) {
+      return <RootMenu onSelect={(value) => setScreen(value)} />;
+    }
+    if (state.status === "ready") {
+      const Handler = menuHandlers[screen];
+      const { config } = state;
+      return (
+        <Handler
+          config={config}
+          onBack={() => setScreen(ROOT_MENU_SCREEN)}
+          projectDirectory={config.projectDirectory}
+          onConfigUpdate={setConfig}
+          onProjectSelect={(path) => setCurrentProjectFromPath(path)}
+        />
+      );
+    }
+    return null;
+  };
+
+  const getHeaderTitle = () => {
+    if (state.status === "ready") return `TenZero CLI [${state.config.name}]`;
+    return "TenZero CLI";
+  };
+
+  const getStatus = () => {
+    if (state.status === "loading") return "Loading";
+    if (state.status === "missing") return "Setup";
+    if (currentProject) return `Project: ${currentProject.name}`;
+    if (screen === ROOT_MENU_SCREEN) return "Ready";
+    return "Ready";
+  };
+
+  const getFooterLeft = () => {
+    if (state.status === "loading" || state.status === "missing")
+      return "(x) exit";
+    if (currentProject || screen !== ROOT_MENU_SCREEN) {
+      return "(x) exit  (b) back  (Esc) back";
+    }
+    return "(x) exit";
+  };
+
+  return (
+    <System>
+      <AppLayout
+        headerTitle={getHeaderTitle()}
+        status={getStatus()}
+        footerLeft={getFooterLeft()}
+      >
+        {renderMain()}
+      </AppLayout>
     </System>
   );
 }

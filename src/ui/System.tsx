@@ -3,6 +3,7 @@ import { Box, Text, useInput, useApp } from "ink";
 import { Alert, Spinner } from "@inkjs/ui";
 import { clearScreen } from "@/lib/common";
 import { getDependencyStatus } from "@/lib/dependencies";
+import AppLayout from "@/ui/components/AppLayout";
 
 const COMMAND_KEYS = {
   exit: ["x", "X"],
@@ -41,36 +42,45 @@ export default function System({ children }: Props) {
 
   if (status === "loading") {
     return (
-      <Box flexDirection="column" padding={1}>
-        <Text color="yellow">TenZero CLI</Text>
-        <Spinner label="Loading" />
-      </Box>
+      <AppLayout
+        headerTitle="TenZero CLI"
+        status="Loading"
+        footerLeft={`(${COMMAND_KEYS.exit[0]}) exit`}
+      >
+        <Box flexDirection="column" padding={1}>
+          <Spinner label="Checking dependencies" />
+        </Box>
+      </AppLayout>
     );
   }
 
   if (status === "failed") {
     return (
-      <>
-        <Box flexDirection="column" padding={1} gap={1}>
-          {failedDeps.map((dep) => (
-            <Box key={dep.name} flexDirection="column" gap={0}>
-              <Alert variant="error" title={`${dep.name} not found`}>
-                {dep.name} is required but was not found on your system.
-              </Alert>
-              <Box marginTop={1} flexDirection="column" gap={0}>
-                {dep.instructions.map((line, i) => (
-                  <Text key={i} dimColor={!!line}>
-                    {line || " "}
-                  </Text>
-                ))}
+      <AppLayout
+        headerTitle="TenZero CLI"
+        status="Error"
+        alerts={
+          <>
+            {failedDeps.map((dep) => (
+              <Box key={dep.name} flexDirection="column" gap={0} marginBottom={1}>
+                <Alert variant="error" title={`${dep.name} not found`}>
+                  {dep.name} is required but was not found on your system.
+                </Alert>
+                <Box marginTop={1} flexDirection="column" gap={0}>
+                  {dep.instructions.map((line, i) => (
+                    <Text key={i} dimColor={!!line}>
+                      {line || " "}
+                    </Text>
+                  ))}
+                </Box>
               </Box>
-            </Box>
-          ))}
-        </Box>
-        <Box marginTop={1}>
-          <Text dimColor>({COMMAND_KEYS.exit[0]}) exit</Text>
-        </Box>
-      </>
+            ))}
+          </>
+        }
+        footerLeft={`(${COMMAND_KEYS.exit[0]}) exit`}
+      >
+        <></>
+      </AppLayout>
     );
   }
 
