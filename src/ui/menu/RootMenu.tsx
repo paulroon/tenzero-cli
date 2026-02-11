@@ -4,10 +4,8 @@ import { Alert, Select } from "@inkjs/ui";
 import { useConfig } from "@/hooks/useConfig";
 
 export const ROOT_MENU_OPTIONS = [
-  { label: "New Symfony App", value: "symfony" },
-  { label: "New NextJS app", value: "nextjs" },
-  { label: "Options", value: "options" },
-  { label: "Open existing project", value: "open-existing-project" },
+  { label: "Options...", value: "options" },
+  { label: "Open...", value: "open-existing-project" },
 ] as const;
 
 export type RootMenuChoice = (typeof ROOT_MENU_OPTIONS)[number]["value"];

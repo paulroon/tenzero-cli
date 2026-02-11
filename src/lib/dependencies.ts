@@ -36,17 +36,6 @@ function brewInstructions(
 
 const DEPENDENCIES = [
   {
-    name: "symfony",
-    command: "symfony",
-    checkArgs: ["version"] as const,
-    instructions: [
-      "Install the Symfony CLI: symfony.com/download",
-      "",
-      "macOS (Homebrew):  brew install symfony-cli/tap/symfony-cli",
-      "Linux/macOS:       curl -sS https://get.symfony.com/cli/installer | bash",
-    ],
-  },
-  {
     name: "node",
     command: "node",
     checkArgs: ["--version"] as const,
