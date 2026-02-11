@@ -1,22 +1,22 @@
 import { useState } from "react";
 import { Box, Text, useInput, useApp } from "ink";
 import { Spinner } from "@inkjs/ui";
-import { CurrentProjectProvider, useCurrentProject } from "../contexts/CurrentProjectContext";
-import { InputModeProvider, useInputMode } from "../contexts/InputModeContext";
-import { useConfig } from "../hooks/useConfig";
-import ConfigSetup from "./ConfigSetup";
-import System from "./System";
-import ProjectScreen from "./ProjectScreen";
-import RootMenu, { type RootMenuChoice } from "./menu/RootMenu";
-import { menuHandlers } from "./menu/handlers";
-import { clearScreen } from "../lib/common";
+import { CurrentProjectProvider, useCurrentProject } from "@/contexts/CurrentProjectContext";
+import { InputModeProvider, useInputMode } from "@/contexts/InputModeContext";
+import { useConfig } from "@/hooks/useConfig";
+import ConfigSetup from "@/ui/ConfigSetup";
+import System from "@/ui/System";
+import ProjectScreen from "@/ui/ProjectScreen";
+import RootMenu, { type RootMenuChoice } from "@/ui/menu/RootMenu";
+import { menuHandlers } from "@/ui/menu/handlers";
+import { clearScreen } from "@/lib/common";
 
 const EXIT_KEYS = ["x", "X"];
 
 const ROOT_MENU_SCREEN = "root-menu";
 
 function AppContent() {
-  const [config, setConfig] = useConfig();
+  const [state, setConfig] = useConfig();
   const [screen, setScreen] = useState<
     typeof ROOT_MENU_SCREEN | RootMenuChoice
   >(ROOT_MENU_SCREEN);
@@ -36,12 +36,12 @@ function AppContent() {
 
   return (
     <System>
-      {config === "loading" ? (
+      {state.status === "loading" ? (
         <Box flexDirection="column" padding={1}>
           <Text color="yellow">TenZero CLI</Text>
           <Spinner label="Loading" />
         </Box>
-      ) : config === null ? (
+      ) : state.status === "missing" ? (
         <>
           <ConfigSetup onComplete={setConfig} />
           <Box marginTop={1}>
@@ -62,10 +62,11 @@ function AppContent() {
           {screen === ROOT_MENU_SCREEN && (
             <RootMenu onSelect={(value) => setScreen(value)} />
           )}
-          {screen !== ROOT_MENU_SCREEN && config && (
+          {screen !== ROOT_MENU_SCREEN && state.status === "ready" && (
             <Box flexDirection="column" padding={1}>
               {(() => {
                 const Handler = menuHandlers[screen];
+                const { config } = state;
                 return (
                   <Handler
                     config={config}

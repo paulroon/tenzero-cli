@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
+import MenuBox from "@/ui/components/MenuBox";
 import { Select } from "@inkjs/ui";
-import type { TzConfig } from "../../../lib/config";
-import { useInputMode } from "../../../contexts/InputModeContext";
-import Confirm from "../../Confirm";
-import NotYetImplemented from "../../NotYetImplemented";
+import type { TzConfig } from "@/lib/config";
+import { useBackKey } from "@/hooks/useBackKey";
+import Confirm from "@/ui/components/Confirm";
+import NotYetImplemented from "@/ui/components/NotYetImplemented";
 
 const AUTH_OPTIONS = [
   { label: "No auth", value: "no-auth" },
@@ -22,21 +23,11 @@ type Props = {
 
 export default function SymfonyHandler({ onBack, projectDirectory }: Props) {
   const [authChoice, setAuthChoice] = useState<AuthChoice | null>(null);
-  const { inputMode } = useInputMode();
 
-  useInput(
-    (input, key) => {
-      const isBack = key.escape || (!inputMode && (input === "b" || input === "B"));
-      if (isBack) {
-        if (authChoice === null) {
-          onBack();
-        } else {
-          setAuthChoice(null);
-        }
-      }
-    },
-    { isActive: true }
-  );
+  useBackKey(() => {
+    if (authChoice === null) onBack();
+    else setAuthChoice(null);
+  });
 
   const handleConfirm = async () => {
     const proc = Bun.spawn(["echo", "ok", "-", "done"], {
@@ -52,7 +43,7 @@ export default function SymfonyHandler({ onBack, projectDirectory }: Props) {
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">New Symfony App</Text>
         <Text>Choose auth type:</Text>
-        <Box borderStyle="round" borderColor="cyan">
+        <MenuBox>
           <Select
             options={AUTH_OPTIONS.map((o) => ({
               label: o.label,
@@ -60,7 +51,7 @@ export default function SymfonyHandler({ onBack, projectDirectory }: Props) {
             }))}
             onChange={(value) => setAuthChoice(value as AuthChoice)}
           />
-        </Box>
+        </MenuBox>
       </Box>
     );
   }
@@ -70,12 +61,12 @@ export default function SymfonyHandler({ onBack, projectDirectory }: Props) {
   }
 
   return (
-    <Box borderStyle="round" borderColor="cyan">
+    <MenuBox>
       <Confirm
         message={`Are you sure you want to generate this project @ ${projectDirectory}`}
         onConfirm={handleConfirm}
         onCancel={() => setAuthChoice(null)}
       />
-    </Box>
+    </MenuBox>
   );
 }

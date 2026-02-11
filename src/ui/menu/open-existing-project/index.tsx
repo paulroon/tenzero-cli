@@ -1,10 +1,11 @@
 import { useMemo } from "react";
 import { join } from "node:path";
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
+import MenuBox from "@/ui/components/MenuBox";
 import { Select } from "@inkjs/ui";
-import type { TzConfig } from "../../../lib/config";
-import { loadProjectConfig } from "../../../lib/projectConfig";
-import { useInputMode } from "../../../contexts/InputModeContext";
+import type { TzConfig } from "@/lib/config";
+import { loadProjectConfig } from "@/lib/projectConfig";
+import { useBackKey } from "@/hooks/useBackKey";
 
 type Props = {
   config: TzConfig;
@@ -19,7 +20,7 @@ export default function OpenExistingProjectHandler({
   projectDirectory,
   onProjectSelect,
 }: Props) {
-  const { inputMode } = useInputMode();
+  useBackKey(onBack);
   const projects = config.projects ?? [];
 
   const options = useMemo(
@@ -31,14 +32,6 @@ export default function OpenExistingProjectHandler({
         return { label, value: dirName };
       }),
     [projects, projectDirectory]
-  );
-
-  useInput(
-    (input, key) => {
-      const isBack = key.escape || (!inputMode && (input === "b" || input === "B"));
-      if (isBack) onBack();
-    },
-    { isActive: true }
   );
 
   if (projects.length === 0) {
@@ -54,7 +47,7 @@ export default function OpenExistingProjectHandler({
     <Box flexDirection="column" gap={1}>
       <Text color="yellow">Open Existing Project</Text>
       <Text>Choose a project:</Text>
-      <Box marginTop={1} borderStyle="round" borderColor="cyan">
+      <MenuBox marginTop={1}>
         <Select
           options={options}
           onChange={(value) => {
@@ -62,7 +55,7 @@ export default function OpenExistingProjectHandler({
             onProjectSelect?.(fullPath);
           }}
         />
-      </Box>
+      </MenuBox>
     </Box>
   );
 }

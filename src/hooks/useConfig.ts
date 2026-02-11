@@ -1,18 +1,25 @@
 import { useEffect, useState } from "react";
-import { loadConfig, saveConfig, type TzConfig } from "../lib/config";
+import { loadConfig, saveConfig, type TzConfig } from "@/lib/config";
 
-export function useConfig() {
-  const [config, setConfig] = useState<TzConfig | null | "loading">("loading");
+export type ConfigState =
+  | { status: "loading" }
+  | { status: "ready"; config: TzConfig }
+  | { status: "missing" };
+
+export function useConfig(): [ConfigState, (config: TzConfig) => void] {
+  const [state, setState] = useState<ConfigState>({ status: "loading" });
 
   useEffect(() => {
     const loaded = loadConfig();
     if (loaded) {
-      saveConfig(loaded); // persist synced projects
-      setConfig(loaded);
+      saveConfig(loaded);
+      setState({ status: "ready", config: loaded });
     } else {
-      setConfig(null);
+      setState({ status: "missing" });
     }
   }, []);
 
-  return [config, setConfig] as const;
+  const setConfig = (config: TzConfig) => setState({ status: "ready", config });
+
+  return [state, setConfig];
 }

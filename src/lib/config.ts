@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { writeFileSync, existsSync, readdirSync } from "node:fs";
+import { parseJsonFile } from "./json";
 
 export type TzConfig = {
   name: string;
@@ -39,37 +40,27 @@ export function syncProjects(
 
 const CONFIG_FILENAME = ".tz.json";
 
-export function getConfigPath(): string {
+export function getUserConfigPath(): string {
   return join(homedir(), CONFIG_FILENAME);
 }
 
 export function loadConfig(): TzConfig | null {
-  const path = getConfigPath();
-  if (!existsSync(path)) {
-    return null;
-  }
-  try {
-    const raw = readFileSync(path, "utf-8");
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof parsed.name !== "string") {
-      return null;
-    }
-    const projectDirectory =
-      typeof parsed.projectDirectory === "string"
-        ? parsed.projectDirectory
-        : join(homedir(), "Projects");
-    const projects =
-      Array.isArray(parsed.projects) &&
-      parsed.projects.every((p): p is string => typeof p === "string")
-        ? parsed.projects
-        : [];
-    return syncProjects({ name: parsed.name, projectDirectory, projects });
-  } catch {
-    return null;
-  }
+  const parsed = parseJsonFile<Record<string, unknown>>(getUserConfigPath());
+  if (!parsed || typeof parsed.name !== "string") return null;
+
+  const projectDirectory =
+    typeof parsed.projectDirectory === "string"
+      ? parsed.projectDirectory
+      : join(homedir(), "Projects");
+  const projects =
+    Array.isArray(parsed.projects) &&
+    parsed.projects.every((p): p is string => typeof p === "string")
+      ? parsed.projects
+      : [];
+  return syncProjects({ name: parsed.name, projectDirectory, projects });
 }
 
 export function saveConfig(config: TzConfig): void {
-  const path = getConfigPath();
+  const path = getUserConfigPath();
   writeFileSync(path, JSON.stringify(config, null, 2), "utf-8");
 }

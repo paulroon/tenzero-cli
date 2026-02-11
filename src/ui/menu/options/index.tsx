@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
+import MenuBox from "@/ui/components/MenuBox";
 import { Select } from "@inkjs/ui";
-import type { TzConfig } from "../../../lib/config";
-import { useInputMode } from "../../../contexts/InputModeContext";
-import ConfigSetup from "../../ConfigSetup";
+import type { TzConfig } from "@/lib/config";
+import { useBackKey } from "@/hooks/useBackKey";
+import ConfigSetup from "@/ui/ConfigSetup";
 
 const OPTIONS_MENU_ITEMS = [
   { label: "View Config", value: "view-config" },
@@ -21,28 +22,18 @@ type Props = {
 
 export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props) {
   const [choice, setChoice] = useState<OptionChoice | null>(null);
-  const { inputMode } = useInputMode();
 
-  useInput(
-    (input, key) => {
-      const isBack = key.escape || (!inputMode && (input === "b" || input === "B"));
-      if (isBack) {
-        if (choice === null) {
-          onBack();
-        } else {
-          setChoice(null);
-        }
-      }
-    },
-    { isActive: true }
-  );
+  useBackKey(() => {
+    if (choice === null) onBack();
+    else setChoice(null);
+  });
 
   if (choice === null) {
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">Options</Text>
         <Text>Choose an option:</Text>
-        <Box marginTop={1} borderStyle="round" borderColor="cyan">
+        <MenuBox marginTop={1}>
           <Select
             options={OPTIONS_MENU_ITEMS.map((o) => ({
               label: o.label,
@@ -50,7 +41,7 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
             }))}
             onChange={(value) => setChoice(value as OptionChoice)}
           />
-        </Box>
+        </MenuBox>
       </Box>
     );
   }
@@ -59,12 +50,7 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">View Config</Text>
-        <Box
-          flexDirection="column"
-          padding={1}
-          borderStyle="round"
-          borderColor="cyan"
-        >
+        <MenuBox flexDirection="column" padding={1}>
           <Text>
             <Text bold>Name: </Text>
             {config.name}
@@ -73,7 +59,7 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
             <Text bold>Project Directory: </Text>
             {config.projectDirectory}
           </Text>
-        </Box>
+        </MenuBox>
       </Box>
     );
   }

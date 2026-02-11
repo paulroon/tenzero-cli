@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
+import MenuBox from "@/ui/components/MenuBox";
 import { Alert, Select } from "@inkjs/ui";
-import { useConfig } from "../../hooks/useConfig";
+import { useConfig } from "@/hooks/useConfig";
 
 export const ROOT_MENU_OPTIONS = [
   { label: "New Symfony App", value: "symfony" },
@@ -16,8 +17,8 @@ type Props = {
 };
 
 export default function RootMenu({ onSelect }: Props) {
-  const [config] = useConfig();
-  if (config === null) {
+  const [state] = useConfig();
+  if (state.status === "missing") {
     return (
       <Box flexDirection="column" padding={1}>
         <Text color="yellow">TenZero CLI</Text>
@@ -27,14 +28,9 @@ export default function RootMenu({ onSelect }: Props) {
       </Box>
     );
   }
-  return typeof config === "object" ? (
-    <Box
-      flexDirection="column"
-      padding={1}
-      borderStyle="round"
-      borderColor="cyan"
-    >
-      <Text color="yellow">TenZero CLI [{config.name}]</Text>
+  return state.status === "ready" ? (
+    <MenuBox flexDirection="column" padding={1}>
+      <Text color="yellow">TenZero CLI [{state.config.name}]</Text>
       <Text>Choose an option:</Text>
       <Box marginTop={1}>
         <Select
@@ -46,6 +42,6 @@ export default function RootMenu({ onSelect }: Props) {
           onChange={(value) => onSelect(value as RootMenuChoice)}
         />
       </Box>
-    </Box>
+    </MenuBox>
   ) : null;
 }

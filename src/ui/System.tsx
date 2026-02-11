@@ -1,8 +1,8 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { Box, Text, useInput, useApp } from "ink";
 import { Alert, Spinner } from "@inkjs/ui";
-import { clearScreen } from "../lib/common";
-import { getDependencyStatus } from "../lib/dependencies";
+import { clearScreen } from "@/lib/common";
+import { getDependencyStatus } from "@/lib/dependencies";
 
 const COMMAND_KEYS = {
   exit: ["x", "X"],

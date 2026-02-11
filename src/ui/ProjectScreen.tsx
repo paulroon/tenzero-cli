@@ -1,6 +1,6 @@
-import { Box, Text, useInput } from "ink";
-import { useInputMode } from "../contexts/InputModeContext";
-import { useCurrentProject } from "../contexts/CurrentProjectContext";
+import { Box, Text } from "ink";
+import { useBackKey } from "@/hooks/useBackKey";
+import { useCurrentProject } from "@/contexts/CurrentProjectContext";
 
 type Props = {
   onBack: () => void;
@@ -8,18 +8,11 @@ type Props = {
 
 export default function ProjectScreen({ onBack }: Props) {
   const { currentProject, clearCurrentProject } = useCurrentProject();
-  const { inputMode } = useInputMode();
 
-  useInput(
-    (input, key) => {
-      const isBack = key.escape || (!inputMode && (input === "b" || input === "B"));
-      if (isBack) {
-        clearCurrentProject();
-        onBack();
-      }
-    },
-    { isActive: true }
-  );
+  useBackKey(() => {
+    clearCurrentProject();
+    onBack();
+  });
 
   if (!currentProject) return null;
 

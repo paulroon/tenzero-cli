@@ -1,10 +1,10 @@
 import type { ComponentType } from "react";
-import type { RootMenuChoice } from "./RootMenu";
-import type { TzConfig } from "../../lib/config";
-import SymfonyHandler from "./symfony";
-import NextJsHandler from "./nextjs";
-import OptionsHandler from "./options";
-import OpenExistingProjectHandler from "./open-existing-project";
+import type { RootMenuChoice } from "@/ui/menu/RootMenu";
+import type { TzConfig } from "@/lib/config";
+import SymfonyHandler from "@/ui/menu/symfony";
+import NextJsHandler from "@/ui/menu/nextjs";
+import OptionsHandler from "@/ui/menu/options";
+import OpenExistingProjectHandler from "@/ui/menu/open-existing-project";
 
 type HandlerProps = {
   config: TzConfig;

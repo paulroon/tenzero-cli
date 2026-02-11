@@ -4,7 +4,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { loadProjectConfig, type TzProjectConfig } from "../lib/projectConfig";
+import { loadProjectConfig, type TzProjectConfig } from "@/lib/projectConfig";
 
 type CurrentProjectContextValue = {
   currentProject: TzProjectConfig | null;
