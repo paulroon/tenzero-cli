@@ -7,7 +7,6 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { saveConfig, syncProjects, type TzConfig } from "@/lib/config";
-import { wait } from "@/lib/common";
 
 const DEFAULT_PROJECT_DIR = join(homedir(), "Projects");
 
@@ -39,7 +38,6 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
   const { setInputMode } = useInputMode();
   const [name, setName] = useState<string | null>(null);
   const [projectDirError, setProjectDirError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     setInputMode(true);
@@ -60,9 +58,6 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
     setProjectDirError(null);
     const resolvedPath = resolvePath(projectDirectory);
 
-    setLoading(false);
-    await wait(15); // TODO: remove this
-    setLoading(true);
     const config = syncProjects({
       name: name!,
       projectDirectory: resolvedPath,
