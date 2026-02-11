@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { saveConfig, syncProjects, type TzConfig } from "@/lib/config";
+import { wait } from "@/lib/common";
 
 const DEFAULT_PROJECT_DIR = join(homedir(), "Projects");
 
@@ -38,6 +39,7 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
   const { setInputMode } = useInputMode();
   const [name, setName] = useState<string | null>(null);
   const [projectDirError, setProjectDirError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     setInputMode(true);
@@ -48,7 +50,7 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
     setName(value.trim());
   };
 
-  const handleProjectDirSubmit = (value: string) => {
+  const handleProjectDirSubmit = async (value: string) => {
     const projectDirectory = value.trim() || DEFAULT_PROJECT_DIR;
     const error = validateProjectDirectory(projectDirectory);
     if (error) {
@@ -57,7 +59,15 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
     }
     setProjectDirError(null);
     const resolvedPath = resolvePath(projectDirectory);
-    const config = syncProjects({ name: name!, projectDirectory: resolvedPath, projects: [] });
+
+    setLoading(false);
+    await wait(15); // TODO: remove this
+    setLoading(true);
+    const config = syncProjects({
+      name: name!,
+      projectDirectory: resolvedPath,
+      projects: [],
+    });
     saveConfig(config);
     onComplete(config);
   };
@@ -83,7 +93,9 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
   if (name === null) {
     return (
       <MenuBox flexDirection="column" padding={1}>
-        <Text color="yellow">{isEditMode ? "Edit Config" : "Welcome to TenZero CLI"}</Text>
+        <Text color="yellow">
+          {isEditMode ? "Edit Config" : "Welcome to TenZero CLI"}
+        </Text>
         <Text>Enter your name:</Text>
         <Box marginTop={1}>
           <TextInput
@@ -99,7 +111,9 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
 
   return (
     <MenuBox flexDirection="column" padding={1}>
-      <Text color="yellow">{isEditMode ? "Edit Config" : "Welcome to TenZero CLI"}</Text>
+      <Text color="yellow">
+        {isEditMode ? "Edit Config" : "Welcome to TenZero CLI"}
+      </Text>
       <Text>Enter project directory (where projects will be installed):</Text>
       <Box marginTop={1}>
         <TextInput

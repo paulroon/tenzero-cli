@@ -6,6 +6,7 @@ import {
   useCurrentProject,
 } from "@/contexts/CurrentProjectContext";
 import { InputModeProvider, useInputMode } from "@/contexts/InputModeContext";
+import { LoadingProvider } from "@/contexts/LoadingContext";
 import { useConfig } from "@/hooks/useConfig";
 import AppLayout from "@/ui/components/AppLayout";
 import ConfigSetup from "@/ui/ConfigSetup";
@@ -108,10 +109,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <InputModeProvider>
-      <CurrentProjectProvider>
-        <AppContent />
-      </CurrentProjectProvider>
-    </InputModeProvider>
+    <LoadingProvider>
+      <InputModeProvider>
+        <CurrentProjectProvider>
+          <AppContent />
+        </CurrentProjectProvider>
+      </InputModeProvider>
+    </LoadingProvider>
   );
 }

@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { writeFileSync, existsSync, readdirSync } from "node:fs";
 import { parseJsonFile } from "./json";
+import { wait } from "./common";
 
 export type TzConfig = {
   name: string;
