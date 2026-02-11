@@ -36,10 +36,25 @@ function brewInstructions(
 
 const DEPENDENCIES = [
   {
+    name: "symfony CLI",
+    command: "symfony",
+    checkArgs: ["version"] as const,
+    instructions: [
+      "Install the Symfony CLI: symfony.com/download",
+      "",
+      "macOS (Homebrew):  brew install symfony-cli/tap/symfony-cli",
+      "Linux/macOS:       curl -sS https://get.symfony.com/cli/installer | bash",
+    ],
+  },
+  {
     name: "node",
     command: "node",
     checkArgs: ["--version"] as const,
-    instructions: brewInstructions("Install Node.js", "nodejs.org/en/download/", "node"),
+    instructions: brewInstructions(
+      "Install Node.js",
+      "nodejs.org/en/download/",
+      "node"
+    ),
   },
   {
     name: "npm",
@@ -51,13 +66,21 @@ const DEPENDENCIES = [
     name: "yarn",
     command: "yarn",
     checkArgs: ["--version"] as const,
-    instructions: brewInstructions("Install Yarn", "yarnpkg.com/getting-started/install", "yarn"),
+    instructions: brewInstructions(
+      "Install Yarn",
+      "yarnpkg.com/getting-started/install",
+      "yarn"
+    ),
   },
   {
     name: "pnpm",
     command: "pnpm",
     checkArgs: ["--version"] as const,
-    instructions: brewInstructions("Install pnpm", "pnpmjs.com/installation", "pnpm"),
+    instructions: brewInstructions(
+      "Install pnpm",
+      "pnpmjs.com/installation",
+      "pnpm"
+    ),
   },
   {
     name: "bun",
