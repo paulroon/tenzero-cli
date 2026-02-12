@@ -3,12 +3,23 @@ import { existsSync } from "node:fs";
 import type { ProjectBuilderAnswers, PipelineStep, Profile, StepContext } from "@/lib/steps/types";
 import { stepRegistry } from "@/lib/steps/registry";
 import { getApplicablePipelineSteps } from "@/lib/config/projectBuilder";
+import { getStepLabel } from "./projectGenerator/stepLabels";
 
 export type { ProjectBuilderAnswers, Profile } from "@/lib/steps/types";
+
+export type StepProgress = {
+  index: number;
+  total: number;
+  label: string;
+  status: "running" | "done" | "error";
+};
+
+export type GenerationProgressCallback = (progress: StepProgress) => void;
 
 /**
  * Generates a new project from builder answers and pipeline config.
  * Runs each pipeline step in order. Skips steps whose 'when' doesn't match answers.
+ * Calls onProgress before/after each step for UI updates.
  */
 export async function generateProject(
   projectDirectory: string,
@@ -18,6 +29,7 @@ export async function generateProject(
     configDir?: string;
     projectType: "symfony" | "nextjs" | "other";
     profile: Profile;
+    onProgress?: GenerationProgressCallback;
   }
 ): Promise<void> {
   const projectName = answers.projectName?.trim();
@@ -40,21 +52,53 @@ export async function generateProject(
   };
 
   const applicableSteps = getApplicablePipelineSteps(options.pipeline, answers);
+  const allSteps: Array<{ step: PipelineStep; config: Record<string, unknown> }> = [
+    ...applicableSteps.map((step) => ({
+      step,
+      config: {
+        ...step.config,
+        interpolate: step.interpolate ?? step.config?.interpolate ?? false,
+      },
+    })),
+    {
+      step: { type: "finalize", config: { projectType: options.projectType } },
+      config: { projectType: options.projectType },
+    },
+  ];
+  const total = allSteps.length;
+  const onProgress = options.onProgress;
 
-  for (const step of applicableSteps) {
+  for (let i = 0; i < allSteps.length; i++) {
+    const { step, config } = allSteps[i];
+    const label = getStepLabel(step, ctx);
+    onProgress?.({
+      index: i,
+      total,
+      label,
+      status: "running",
+    });
+
     const executor = stepRegistry[step.type];
     if (!executor) {
       throw new Error(`Unknown pipeline step type: ${step.type}`);
     }
-    const config = {
-      ...step.config,
-      interpolate: step.interpolate ?? step.config?.interpolate ?? false,
-    };
-    await executor(ctx, config);
-  }
 
-  // Always run finalize at the end (implied for all projects)
-  await stepRegistry.finalize(ctx, {
-    projectType: options.projectType,
-  });
+    try {
+      await executor(ctx, config);
+      onProgress?.({
+        index: i,
+        total,
+        label,
+        status: "done",
+      });
+    } catch (err) {
+      onProgress?.({
+        index: i,
+        total,
+        label,
+        status: "error",
+      });
+      throw err;
+    }
+  }
 }

@@ -105,7 +105,7 @@ Project templates live under `config/projects/<id>/`. Each has a `config.json`:
 
 **Interpolation:** Use `%projectName%`, `%profile.name%`, `%profile.email%` (and `{{key}}`) in commands and copied files. Set `interpolate: true` on a `copy` step to process file contents.
 
-**Pipeline steps:** `run`, `copy`, `modify`, plus an implied `finalize` (git init, `.tzconfig.json`, `.gitignore`, initial commit).
+**Pipeline steps:** `run`, `copy`, `modify`, `delete`, plus an implied `finalize` (git init, `.tzconfig.json`, `.gitignore`, initial commit).
 
 ---
 

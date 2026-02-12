@@ -6,17 +6,28 @@ import {
   listProjectConfigs,
   loadProjectBuilderConfig,
   getApplicableSteps,
+  getApplicablePipelineSteps,
   saveConfig,
   syncProjects,
   type ProjectBuilderConfig,
   type ProjectConfigMeta,
 } from "@/lib/config";
 import { useBackKey } from "@/hooks/useBackKey";
-import { useLoading } from "@/contexts/LoadingContext";
 import { generateProject } from "@/lib/projectGenerator";
+import { getStepLabel } from "@/lib/projectGenerator/stepLabels";
+import { GenerationError } from "@/lib/projectGenerator/GenerationError";
+import GenerationOutput, {
+  type GenerationStep,
+} from "@/ui/components/GenerationOutput";
 import { join } from "node:path";
 
-type Phase = "config-select" | "questions" | "confirm" | "done";
+type Phase =
+  | "config-select"
+  | "questions"
+  | "confirm"
+  | "generating"
+  | "generation-error"
+  | "done";
 
 type Props = {
   config: TzConfig;
@@ -33,7 +44,6 @@ export default function ProjectBuilder({
   onConfigUpdate,
   onProjectSelect,
 }: Props) {
-  const { setLoading } = useLoading();
   const [availableConfigs, setAvailableConfigs] = useState<ProjectConfigMeta[]>(
     []
   );
@@ -43,6 +53,12 @@ export default function ProjectBuilder({
   const [stepIndex, setStepIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("config-select");
   const [error, setError] = useState<string | null>(null);
+  const [generationSteps, setGenerationSteps] = useState<GenerationStep[]>([]);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generationLastOutput, setGenerationLastOutput] = useState<{
+    stdout?: string;
+    stderr?: string;
+  } | null>(null);
 
   useEffect(() => {
     const configs = listProjectConfigs();
@@ -60,6 +76,12 @@ export default function ProjectBuilder({
   useBackKey(() => {
     if (phase === "config-select") {
       onBack();
+    } else if (phase === "generating") {
+      // Cannot go back while generating
+    } else if (phase === "generation-error") {
+      setPhase("confirm");
+      setGenerationError(null);
+      setGenerationLastOutput(null);
     } else if (phase === "questions" && stepIndex > 0) {
       const steps = builderConfig ? getApplicableSteps(builderConfig, answers) : [];
       const prevStep = steps[stepIndex - 1];
@@ -118,39 +140,77 @@ export default function ProjectBuilder({
 
   const handleConfirm = () => {
     setError(null);
-    setLoading(true);
+    if (!builderConfig) return;
 
-    const runCreate = async () => {
-      await new Promise<void>((resolve) => {
-        setTimeout(async () => {
-          try {
-            if (!builderConfig) throw new Error("Config not loaded");
-            await generateProject(projectDirectory, answers, {
-              pipeline: builderConfig.pipeline,
-              configDir: builderConfig._configDir,
-              projectType: builderConfig.type,
-              profile: { name: config.name, email: config.email ?? "" },
-            });
-            const projectName = answers.projectName?.trim() ?? "";
-            const projectPath = join(projectDirectory, projectName);
-            const updatedConfig = syncProjects(config);
-            saveConfig(updatedConfig);
-            onConfigUpdate?.(updatedConfig);
-            setPhase("done");
-            onProjectSelect?.(projectPath);
-          } catch (err) {
-            setError(
-              err instanceof Error ? err.message : "Failed to create project"
-            );
-          } finally {
-            setLoading(false);
-            resolve();
-          }
-        }, 0);
-      });
+    const projectName = answers.projectName?.trim() ?? "";
+    const projectPath = join(projectDirectory, projectName);
+    const ctx = {
+      projectDirectory,
+      projectPath,
+      projectName,
+      answers,
+      profile: { name: config.name, email: config.email ?? "" },
+      configDir: builderConfig._configDir,
     };
 
-    runCreate();
+    const applicableSteps = getApplicablePipelineSteps(
+      builderConfig.pipeline,
+      answers
+    );
+    const allSteps = [
+      ...applicableSteps,
+      { type: "finalize", config: { projectType: builderConfig.type } },
+    ];
+    const initialSteps: GenerationStep[] = allSteps.map((step) => ({
+      label: getStepLabel(
+        step as Parameters<typeof getStepLabel>[0],
+        ctx as Parameters<typeof getStepLabel>[1]
+      ),
+      status: "pending",
+    }));
+    setGenerationSteps(initialSteps);
+    setGenerationError(null);
+    setGenerationLastOutput(null);
+    setPhase("generating");
+
+    const runCreate = async () => {
+      try {
+        await generateProject(projectDirectory, answers, {
+          pipeline: builderConfig.pipeline,
+          configDir: builderConfig._configDir,
+          projectType: builderConfig.type,
+          profile: { name: config.name, email: config.email ?? "" },
+          onProgress: (progress) => {
+            setGenerationSteps((prev) =>
+              prev.map((s, i) => ({
+                ...s,
+                status:
+                  i < progress.index
+                    ? "done"
+                    : i === progress.index
+                      ? progress.status
+                      : "pending",
+              }))
+            );
+          },
+        });
+        const updatedConfig = syncProjects(config);
+        saveConfig(updatedConfig);
+        onConfigUpdate?.(updatedConfig);
+        setPhase("done");
+        onProjectSelect?.(projectPath);
+      } catch (err) {
+        const errMessage =
+          err instanceof Error ? err.message : "Failed to create project";
+        const lastOutput =
+          err instanceof GenerationError ? err.lastOutput : null;
+        setGenerationError(errMessage);
+        setGenerationLastOutput(lastOutput ?? null);
+        setPhase("generation-error");
+      }
+    };
+
+    void runCreate();
   };
 
   if (phase === "config-select") {
@@ -200,6 +260,16 @@ export default function ProjectBuilder({
         <Text color="green">Project created successfully!</Text>
         <Text dimColor>Press Esc to go back.</Text>
       </Box>
+    );
+  }
+
+  if (phase === "generating" || phase === "generation-error") {
+    return (
+      <GenerationOutput
+        steps={generationSteps}
+        error={generationError ?? undefined}
+        lastOutput={generationLastOutput ?? undefined}
+      />
     );
   }
 

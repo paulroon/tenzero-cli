@@ -78,8 +78,14 @@ function AppContent() {
     if (state.status === "missing") {
       return <ConfigSetup onComplete={setConfig} />;
     }
-    if (currentProject) {
-      return <ProjectScreen onBack={() => setScreen(ROOT_MENU_SCREEN)} />;
+    if (currentProject && state.status === "ready") {
+      return (
+        <ProjectScreen
+          config={state.config}
+          onBack={() => setScreen(ROOT_MENU_SCREEN)}
+          onConfigUpdate={setConfig}
+        />
+      );
     }
     if (screen === ROOT_MENU_SCREEN) {
       return (
@@ -128,6 +134,8 @@ function AppContent() {
       state.status === "loading" ||
       state.status === "missing" ||
       (screen === ROOT_MENU_SCREEN && !currentProject);
+    if (screen === ROOT_MENU_SCREEN && !currentProject && state.status === "ready")
+      return "(Esc) exit";
     return isAtRoot ? "" : "(Esc) back";
   };
 

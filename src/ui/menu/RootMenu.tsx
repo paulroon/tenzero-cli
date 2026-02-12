@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { Alert, Select } from "@inkjs/ui";
 import { useConfig } from "@/hooks/useConfig";
+import { useBackKey } from "@/hooks/useBackKey";
 
 export const ROOT_MENU_OPTIONS = [
   { label: "New Project", value: "new-project" },
@@ -17,6 +18,7 @@ type Props = {
 
 export default function RootMenu({ onSelect }: Props) {
   const [state] = useConfig();
+  useBackKey(() => onSelect("exit"));
   if (state.status === "missing") {
     return (
       <Box flexDirection="column" padding={1}>
