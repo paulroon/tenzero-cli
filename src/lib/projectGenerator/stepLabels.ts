@@ -28,6 +28,10 @@ export function getStepLabel(
       const file = (resolved.file ?? config.file ?? "?") as string;
       return config.appendIfMissing ? `Append to ${file}` : `Modify ${file}`;
     }
+    case "append": {
+      const file = (resolved.file ?? config.file ?? "?") as string;
+      return `Append to ${file}`;
+    }
     case "delete": {
       const file = (resolved.file ?? config.file ?? "?") as string;
       return `Delete ${file}`;

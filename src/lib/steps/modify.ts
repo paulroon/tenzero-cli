@@ -3,6 +3,11 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import type { StepContext, StepExecutor } from "./types";
 import { resolveStepConfig } from "./types";
 
+/** Escape special regex characters for literal string matching */
+function escapeRegex(str: string): string {
+  return str.replace(/[\\^$.*+?()|[\]{}]/g, "\\$&");
+}
+
 export const modify: StepExecutor = async (ctx, config) => {
   const resolved = resolveStepConfig(config, ctx);
   const file = resolved.file;
@@ -32,7 +37,7 @@ export const modify: StepExecutor = async (ctx, config) => {
         typeof (r as Record<string, unknown>).replace === "string"
       ) {
         const { search, replace } = r as { search: string; replace: string };
-        content = content.replace(new RegExp(search, "g"), replace);
+        content = content.replace(new RegExp(escapeRegex(search), "g"), replace);
       }
     }
   }

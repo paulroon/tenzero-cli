@@ -1,0 +1,51 @@
+# Color / formatting functions
+define coloryellow
+	@tput -T xterm setaf 3
+	@shopt -s xpg_echo && echo $1
+	@tput -T xterm sgr0
+endef
+
+define colorred
+	@tput -T xterm setaf 1
+	@shopt -s xpg_echo && echo $1
+	@tput -T xterm sgr0
+endef
+
+define colorblue
+	@tput -T xterm setaf 4
+	@shopt -s xpg_echo && echo $1
+	@tput -T xterm sgr0
+endef
+
+define colorcyan
+	@tput -T xterm setaf 6
+	@shopt -s xpg_echo && echo $1
+	@tput -T xterm sgr0
+endef
+
+define colorgreen
+	@tput -T xterm setaf 2
+	@shopt -s xpg_echo && echo $1
+	@tput -T xterm sgr0
+endef
+
+# Internal: wait for PostgreSQL
+.PHONY: db-wait
+db-wait:
+	@$(call coloryellow, "\n ========== Waiting for Database ========== \n")
+	@until docker compose exec -T db sh -c 'pg_isready -U "$${POSTGRES_USER:-app}" -d "$${POSTGRES_DB:-app}"' >/dev/null 2>&1; do \
+		echo "Waiting for PostgreSQL..."; \
+		sleep 2; \
+	done
+	@echo "Database is ready."
+
+# Internal: run migrations (used by up and migrate)
+.PHONY: db-migrate
+db-migrate: db-wait
+	@$(call coloryellow, "\n ========== Migrate Database ========== \n")
+	docker compose exec app bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
+
+# Catch-all target to allow passing arguments to composer and console
+.PHONY: %
+%:
+	@:

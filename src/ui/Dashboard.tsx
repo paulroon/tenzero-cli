@@ -79,8 +79,19 @@ export default function Dashboard({
 
   if (!currentProject) return null;
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     try {
+      const isDockerized = currentProject.builderAnswers?.dockerize === "yes";
+      if (isDockerized && makeTargets.includes("down")) {
+        try {
+          await callShell("make", ["down"], {
+            cwd: currentProject.path,
+            throwOnNonZero: false,
+          });
+        } catch {
+          /* ignore: make down failed or target missing, proceed with delete */
+        }
+      }
       rmSync(currentProject.path, { recursive: true });
       const updatedConfig = syncProjects(config);
       saveConfig(updatedConfig);
