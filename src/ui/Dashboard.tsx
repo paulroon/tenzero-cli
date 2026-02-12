@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
 import { Alert, ConfirmInput, Select } from "@inkjs/ui";
 import { useBackKey } from "@/hooks/useBackKey";
@@ -9,6 +9,7 @@ import {
   DEFAULT_EDITOR,
   type TzConfig,
 } from "@/lib/config";
+import { getMakefileTargets } from "@/lib/makefile";
 import { rmSync } from "node:fs";
 
 const RED = "\x1b[31m";
@@ -34,14 +35,17 @@ export default function Dashboard({
   const { currentProject, clearCurrentProject } = useCurrentProject();
   const [choice, setChoice] = useState<ActionChoice | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [menuView, setMenuView] = useState<"main" | "actions" | "make">("main");
 
   useBackKey(() => {
-    if (choice === null) {
-      clearCurrentProject();
-      onBack();
-    } else {
+    if (choice !== null) {
       setChoice(null);
       setDeleteError(null);
+    } else if (menuView !== "main") {
+      setMenuView("main");
+    } else {
+      clearCurrentProject();
+      onBack();
     }
   });
 
@@ -64,6 +68,22 @@ export default function Dashboard({
     },
     { isActive: !!currentProject }
   );
+
+  const makeTargets = useMemo(
+    () => (currentProject ? getMakefileTargets(currentProject.path) : []),
+    [currentProject?.path]
+  );
+
+  const handleMakeSelect = async (target: string) => {
+    if (!currentProject) return;
+    const proc = Bun.spawn(["make", target], {
+      cwd: currentProject.path,
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    await proc.exited;
+  };
 
   if (!currentProject) return null;
 
@@ -114,6 +134,45 @@ export default function Dashboard({
 
   const answers = currentProject.builderAnswers ?? {};
 
+  if (menuView === "actions") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow" bold>
+          Actions
+        </Text>
+        <Select
+          options={PROJECT_ACTIONS.map((o) => ({
+            label: o.label,
+            value: o.value,
+          }))}
+          onChange={(value) => setChoice(value as ActionChoice)}
+        />
+      </Box>
+    );
+  }
+
+  if (menuView === "make" && makeTargets.length > 0) {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow" bold>
+          Make
+        </Text>
+        <Select
+          options={makeTargets.map((t) => ({ label: t, value: t }))}
+          onChange={(target) => void handleMakeSelect(target)}
+        />
+      </Box>
+    );
+  }
+
+  const mainMenuOptions: Array<{ label: string; value: string }> =
+    makeTargets.length > 0
+      ? [
+          { label: "Actions", value: "actions" },
+          { label: "Make commands", value: "make" },
+        ]
+      : [{ label: "Actions", value: "actions" }];
+
   return (
     <Box flexDirection="column" gap={1}>
       <Text color="yellow" bold>
@@ -141,13 +200,10 @@ export default function Dashboard({
         )}
       </Box>
       <Box marginTop={1} flexDirection="column" gap={0}>
-        <Text dimColor>Actions:</Text>
+        <Text dimColor>Commands:</Text>
         <Select
-          options={PROJECT_ACTIONS.map((o) => ({
-            label: o.label,
-            value: o.value,
-          }))}
-          onChange={(value) => setChoice(value as ActionChoice)}
+          options={mainMenuOptions}
+          onChange={(value) => setMenuView(value as "actions" | "make")}
         />
       </Box>
     </Box>
