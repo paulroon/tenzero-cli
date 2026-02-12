@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Box, Text } from "ink";
 import { Select } from "@inkjs/ui";
-import type { TzConfig } from "@/lib/config";
+import { DEFAULT_EDITOR, type TzConfig } from "@/lib/config";
 import { useBackKey } from "@/hooks/useBackKey";
 import ConfigSetup from "@/ui/ConfigSetup";
 
@@ -61,6 +61,10 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
           <Text>
             <Text bold>Project Directory: </Text>
             {config.projectDirectory}
+          </Text>
+          <Text>
+            <Text bold>Editor: </Text>
+            {config.editor || DEFAULT_EDITOR}
           </Text>
         </Box>
       </Box>

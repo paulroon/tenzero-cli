@@ -10,7 +10,7 @@ import { useConfig } from "@/hooks/useConfig";
 import { useDependencyCheck } from "@/hooks/useDependencyCheck";
 import AppLayout from "@/ui/components/AppLayout";
 import ConfigSetup from "@/ui/ConfigSetup";
-import ProjectScreen from "@/ui/ProjectScreen";
+import Dashboard from "@/ui/Dashboard";
 import RootMenu, { type RootMenuChoice } from "@/ui/menu/RootMenu";
 import { menuHandlers } from "@/ui/menu/handlers";
 import { clearScreen } from "@/lib/common";
@@ -80,7 +80,7 @@ function AppContent() {
     }
     if (currentProject && state.status === "ready") {
       return (
-        <ProjectScreen
+        <Dashboard
           config={state.config}
           onBack={() => setScreen(ROOT_MENU_SCREEN)}
           onConfigUpdate={setConfig}
@@ -136,6 +136,7 @@ function AppContent() {
       (screen === ROOT_MENU_SCREEN && !currentProject);
     if (screen === ROOT_MENU_SCREEN && !currentProject && state.status === "ready")
       return "(Esc) exit";
+    if (currentProject) return "(Esc) back  (o) open in editor";
     return isAtRoot ? "" : "(Esc) back";
   };
 

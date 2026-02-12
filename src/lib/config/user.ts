@@ -4,11 +4,15 @@ import { writeFileSync, existsSync, readdirSync } from "node:fs";
 import { parseJsonFile } from "@/lib/json";
 import { getUserConfigPath, TZCONFIG_FILENAME } from "@/lib/paths";
 
+export const DEFAULT_EDITOR = "cursor";
+
 export type TzConfig = {
   name: string;
   email: string;
   projectDirectory: string;
   projects: string[];
+  /** Editor command to open projects (e.g. cursor, code). Default: cursor */
+  editor?: string;
 };
 
 /** Scan project directory for subdirectories that contain .tzconfig; returns directory names (not full paths). */
@@ -52,11 +56,16 @@ export function loadConfig(): TzConfig | null {
       ? parsed.projects
       : [];
   const email = typeof parsed.email === "string" ? parsed.email : "";
+  const editor =
+    typeof parsed.editor === "string" && parsed.editor.trim()
+      ? parsed.editor.trim()
+      : DEFAULT_EDITOR;
   return syncProjects({
     name: parsed.name,
     email,
     projectDirectory,
     projects,
+    editor,
   });
 }
 

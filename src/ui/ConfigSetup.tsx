@@ -4,7 +4,12 @@ import { Alert, TextInput } from "@inkjs/ui";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
-import { saveConfig, syncProjects, type TzConfig } from "@/lib/config";
+import {
+  saveConfig,
+  syncProjects,
+  DEFAULT_EDITOR,
+  type TzConfig,
+} from "@/lib/config";
 
 const DEFAULT_PROJECT_DIR = join(homedir(), "Projects");
 
@@ -36,6 +41,9 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
   const [name, setName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [projectDirError, setProjectDirError] = useState<string | null>(null);
+  const [projectDirResolved, setProjectDirResolved] = useState<string | null>(
+    null
+  );
 
   const handleNameSubmit = (value: string) => {
     setName(value.trim());
@@ -55,17 +63,37 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
     setProjectDirError(null);
     const resolvedPath = resolvePath(projectDirectory);
 
+    if (isEditMode) {
+      setProjectDirResolved(resolvedPath);
+      return;
+    }
+
     const config = syncProjects({
       name: name!,
       email: email ?? "",
       projectDirectory: resolvedPath,
       projects: [],
+      editor: DEFAULT_EDITOR,
+    });
+    saveConfig(config);
+    onComplete(config);
+  };
+
+  const handleEditorSubmit = (value: string) => {
+    const editorCmd = value.trim() || DEFAULT_EDITOR;
+    const config = syncProjects({
+      ...initialConfig!,
+      name: name!,
+      email: email ?? "",
+      projectDirectory: projectDirResolved!,
+      editor: editorCmd,
     });
     saveConfig(config);
     onComplete(config);
   };
 
   const isEditMode = !!initialConfig;
+  const showEditorStep = isEditMode && projectDirResolved !== null;
 
   if (name === null && !initialConfig) {
     return (
@@ -115,6 +143,23 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
             defaultValue={initialConfig?.email}
             placeholder="you@example.com"
             onSubmit={handleEmailSubmit}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (showEditorStep) {
+    return (
+      <Box flexDirection="column" padding={1}>
+        <Text color="yellow">Edit Config</Text>
+        <Text>Editor command to open projects (e.g. cursor, code):</Text>
+        <Box marginTop={1}>
+          <TextInput
+            key="editor"
+            defaultValue={initialConfig?.editor || DEFAULT_EDITOR}
+            placeholder={DEFAULT_EDITOR}
+            onSubmit={handleEditorSubmit}
           />
         </Box>
       </Box>

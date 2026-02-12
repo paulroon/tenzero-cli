@@ -1,9 +1,14 @@
 import { useState } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
 import { Alert, ConfirmInput, Select } from "@inkjs/ui";
 import { useBackKey } from "@/hooks/useBackKey";
 import { useCurrentProject } from "@/contexts/CurrentProjectContext";
-import { syncProjects, saveConfig, type TzConfig } from "@/lib/config";
+import {
+  syncProjects,
+  saveConfig,
+  DEFAULT_EDITOR,
+  type TzConfig,
+} from "@/lib/config";
 import { rmSync } from "node:fs";
 
 const RED = "\x1b[31m";
@@ -21,7 +26,7 @@ type Props = {
   onConfigUpdate?: (config: TzConfig) => void;
 };
 
-export default function ProjectScreen({
+export default function Dashboard({
   onBack,
   config,
   onConfigUpdate,
@@ -39,6 +44,26 @@ export default function ProjectScreen({
       setDeleteError(null);
     }
   });
+
+  useInput(
+    (input, key) => {
+      if (!currentProject) return;
+      if (input.toLowerCase() === "o" && !key.ctrl && !key.meta) {
+        const editor = config.editor?.trim() || DEFAULT_EDITOR;
+        const shell = process.env.SHELL || "zsh";
+        Bun.spawn(
+          [shell, "-l", "-c", `${editor} ${JSON.stringify(currentProject.path)}`],
+          {
+            detached: true,
+            stdin: "ignore",
+            stdout: "ignore",
+            stderr: "ignore",
+          }
+        );
+      }
+    },
+    { isActive: !!currentProject }
+  );
 
   if (!currentProject) return null;
 
