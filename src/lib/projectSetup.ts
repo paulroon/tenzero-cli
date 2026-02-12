@@ -13,7 +13,11 @@ const INITIAL_COMMIT_MESSAGE = "Initial Tz Project setup";
  */
 export async function finalizeTzProjectSetup(
   projectPath: string,
-  config: { name: string; type: TzProjectConfig["type"]; builderAnswers?: ProjectBuilderAnswers }
+  config: {
+    name: string;
+    type: TzProjectConfig["type"];
+    builderAnswers?: ProjectBuilderAnswers;
+  }
 ): Promise<void> {
   const gitDir = join(projectPath, ".git");
   if (existsSync(gitDir)) {
@@ -24,7 +28,10 @@ export async function finalizeTzProjectSetup(
   if (existsSync(gitignorePath)) {
     const content = readFileSync(gitignorePath, "utf-8");
     if (!content.includes(TZCONFIG_FILENAME)) {
-      const entry = content.endsWith("\n") ? `${TZCONFIG_FILENAME}\n` : `\n${TZCONFIG_FILENAME}\n`;
+      const ignoreEntry = `\n###> TenZero ###\n${TZCONFIG_FILENAME}\n###< TenZero ###\n`;
+      const entry = content.endsWith("\n")
+        ? `${ignoreEntry}\n`
+        : `\n${ignoreEntry}\n`;
       writeFileSync(gitignorePath, content + entry, "utf-8");
     }
   } else {
