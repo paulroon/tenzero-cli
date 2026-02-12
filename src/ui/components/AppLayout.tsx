@@ -4,6 +4,7 @@ import LayoutHeader from "@/ui/components/LayoutHeader";
 import LayoutAlerts from "@/ui/components/LayoutAlerts";
 import LayoutMain from "@/ui/components/LayoutMain";
 import LayoutFooter from "@/ui/components/LayoutFooter";
+import BorderBox from "./BorderBox";
 
 type Props = {
   headerTitle: string;
@@ -24,7 +25,9 @@ export default function AppLayout({
     <Box flexDirection="column" flexGrow={1}>
       <LayoutHeader headerTitle={headerTitle} status={status} />
       {alerts && <LayoutAlerts>{alerts}</LayoutAlerts>}
-      <LayoutMain>{children}</LayoutMain>
+      <LayoutMain>
+        <BorderBox>{children}</BorderBox>
+      </LayoutMain>
       <LayoutFooter footerLeft={footerLeft} />
     </Box>
   );

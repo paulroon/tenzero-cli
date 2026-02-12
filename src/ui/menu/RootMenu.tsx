@@ -4,6 +4,7 @@ import { Alert, Select } from "@inkjs/ui";
 import { useConfig } from "@/hooks/useConfig";
 
 export const ROOT_MENU_OPTIONS = [
+  { label: "New Project", value: "new-project" },
   { label: "Options...", value: "options" },
   { label: "Open...", value: "open-existing-project" },
 ] as const;

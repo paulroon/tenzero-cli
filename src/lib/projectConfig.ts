@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { writeFileSync } from "node:fs";
 import { TZCONFIG_FILENAME } from "./config";
 import { parseJsonFile } from "./json";
 
@@ -25,4 +26,16 @@ export function loadProjectConfig(path: string): TzProjectConfig | null {
     path,
     type,
   };
+}
+
+export function saveProjectConfig(
+  projectPath: string,
+  config: Partial<TzProjectConfig>
+): void {
+  const configPath = join(projectPath, TZCONFIG_FILENAME);
+  writeFileSync(
+    configPath,
+    JSON.stringify({ ...config, path: projectPath }, null, 2),
+    "utf-8"
+  );
 }

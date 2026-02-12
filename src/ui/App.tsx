@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Box, Text, useInput, useApp } from "ink";
-import { Spinner } from "@inkjs/ui";
+import { Alert, Spinner } from "@inkjs/ui";
 import {
   CurrentProjectProvider,
   useCurrentProject,
@@ -8,9 +8,9 @@ import {
 import { InputModeProvider, useInputMode } from "@/contexts/InputModeContext";
 import { LoadingProvider } from "@/contexts/LoadingContext";
 import { useConfig } from "@/hooks/useConfig";
+import { useDependencyCheck } from "@/hooks/useDependencyCheck";
 import AppLayout from "@/ui/components/AppLayout";
 import ConfigSetup from "@/ui/ConfigSetup";
-import System from "@/ui/System";
 import ProjectScreen from "@/ui/ProjectScreen";
 import RootMenu, { type RootMenuChoice } from "@/ui/menu/RootMenu";
 import { menuHandlers } from "@/ui/menu/handlers";
@@ -21,6 +21,7 @@ const EXIT_KEYS = ["x", "X"];
 const ROOT_MENU_SCREEN = "root-menu";
 
 function AppContent() {
+  const { status: depsStatus, failedDeps } = useDependencyCheck();
   const [state, setConfig] = useConfig();
   const [screen, setScreen] = useState<
     typeof ROOT_MENU_SCREEN | RootMenuChoice
@@ -40,6 +41,35 @@ function AppContent() {
   );
 
   const renderMain = () => {
+    if (depsStatus === "loading") {
+      return (
+        <Box flexDirection="column" padding={1}>
+          <Spinner label="Checking dependencies" />
+        </Box>
+      );
+    }
+
+    if (depsStatus === "failed") {
+      return (
+        <>
+          {failedDeps.map((dep) => (
+            <Box key={dep.name} flexDirection="column" gap={0} marginBottom={1}>
+              <Alert variant="error" title={`${dep.name} not found`}>
+                {dep.name} is required but was not found on your system.
+              </Alert>
+              <Box marginTop={1} flexDirection="column" gap={0}>
+                {dep.instructions.map((line, i) => (
+                  <Text key={i} dimColor={!!line}>
+                    {line || " "}
+                  </Text>
+                ))}
+              </Box>
+            </Box>
+          ))}
+        </>
+      );
+    }
+
     if (state.status === "loading") {
       return <Spinner label="Loading" />;
     }
@@ -74,6 +104,8 @@ function AppContent() {
   };
 
   const getStatus = () => {
+    if (depsStatus === "loading") return "Loading";
+    if (depsStatus === "failed") return "Error";
     if (state.status === "loading") return "Loading";
     if (state.status === "missing") return "Setup";
     if (currentProject) return `Project: ${currentProject.name}`;
@@ -82,6 +114,8 @@ function AppContent() {
   };
 
   const getFooterLeft = () => {
+    if (depsStatus === "loading" || depsStatus === "failed")
+      return "(x) exit";
     if (state.status === "loading" || state.status === "missing")
       return "(x) exit";
     if (currentProject || screen !== ROOT_MENU_SCREEN) {
@@ -91,15 +125,13 @@ function AppContent() {
   };
 
   return (
-    <System>
-      <AppLayout
-        headerTitle={getHeaderTitle()}
-        status={getStatus()}
-        footerLeft={getFooterLeft()}
-      >
-        {renderMain()}
-      </AppLayout>
-    </System>
+    <AppLayout
+      headerTitle={getHeaderTitle()}
+      status={getStatus()}
+      footerLeft={getFooterLeft()}
+    >
+      {renderMain()}
+    </AppLayout>
   );
 }
 

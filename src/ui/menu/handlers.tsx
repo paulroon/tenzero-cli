@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { RootMenuChoice } from "@/ui/menu/RootMenu";
 import type { TzConfig } from "@/lib/config";
+import ProjectBuilder from "@/ui/menu/new-project";
 import OptionsHandler from "@/ui/menu/options";
 import OpenExistingProjectHandler from "@/ui/menu/open-existing-project";
 
@@ -17,6 +18,7 @@ export const menuHandlers: Record<
   RootMenuChoice,
   ComponentType<HandlerProps>
 > = {
+  "new-project": ProjectBuilder,
   options: OptionsHandler,
   "open-existing-project": OpenExistingProjectHandler,
 };
