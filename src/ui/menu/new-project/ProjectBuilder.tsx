@@ -11,8 +11,7 @@ import {
   type ProjectBuilderConfig,
 } from "@/lib/projectBuilderConfig";
 import { saveConfig, syncProjects } from "@/lib/config";
-import { saveProjectConfig } from "@/lib/projectConfig";
-import { existsSync } from "node:fs";
+import { generateProject } from "@/lib/projectGenerator";
 import { join } from "node:path";
 
 type Phase = "questions" | "confirm" | "done";
@@ -94,53 +93,20 @@ export default function ProjectBuilder({
 
   const handleConfirm = () => {
     setError(null);
-    const projectName = answers.projectName?.trim();
-    if (!projectName) {
-      setError("Project name is required");
-      return;
-    }
-
-    const projectPath = join(projectDirectory, projectName);
-    if (existsSync(projectPath)) {
-      setError(`Project already exists: ${projectName}`);
-      return;
-    }
-
-    const projectType = answers.projectType;
-    if (projectType !== "symfony") {
-      setError("Only Symfony projects are supported for creation at this time.");
-      return;
-    }
-
     setLoading(true);
 
     const runCreate = async () => {
       await new Promise<void>((resolve) => {
         setTimeout(async () => {
           try {
-            const proc = Bun.spawn(
-              ["symfony", "new", "--webapp", projectName],
-              {
-                cwd: projectDirectory,
-                stdin: "inherit",
-                stdout: "inherit",
-                stderr: "inherit",
-              }
-            );
-            const exitCode = await proc.exited;
-            if (exitCode !== 0) {
-              setError("Failed to create project. Check the output above.");
-            } else {
-              saveProjectConfig(projectPath, {
-                name: projectName,
-                type: "symfony",
-              });
-              const updatedConfig = syncProjects(config);
-              saveConfig(updatedConfig);
-              onConfigUpdate?.(updatedConfig);
-              setPhase("done");
-              onProjectSelect?.(projectPath);
-            }
+            await generateProject(projectDirectory, answers);
+            const projectName = answers.projectName?.trim() ?? "";
+            const projectPath = join(projectDirectory, projectName);
+            const updatedConfig = syncProjects(config);
+            saveConfig(updatedConfig);
+            onConfigUpdate?.(updatedConfig);
+            setPhase("done");
+            onProjectSelect?.(projectPath);
           } catch (err) {
             setError(
               err instanceof Error ? err.message : "Failed to create project"
