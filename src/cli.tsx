@@ -1,5 +1,7 @@
 import React from "react";
 import { render } from "ink";
 import App from "@/ui/App";
+import { setInkInstance } from "@/lib/inkInstance";
 
-render(<App />);
+const instance = render(<App />);
+setInkInstance(instance);

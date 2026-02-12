@@ -14,6 +14,7 @@ import ProjectScreen from "@/ui/ProjectScreen";
 import RootMenu, { type RootMenuChoice } from "@/ui/menu/RootMenu";
 import { menuHandlers } from "@/ui/menu/handlers";
 import { clearScreen } from "@/lib/common";
+import { getInkInstance } from "@/lib/inkInstance";
 
 const ROOT_MENU_SCREEN = "root-menu";
 
@@ -26,11 +27,15 @@ function AppContent() {
   const { exit } = useApp();
   const { currentProject, setCurrentProjectFromPath } = useCurrentProject();
 
+  const exitApp = () => {
+    getInkInstance()?.clear();
+    clearScreen();
+    exit();
+    process.exit(0);
+  };
+
   useEffect(() => {
-    const handler = () => {
-      clearScreen();
-      exit();
-    };
+    const handler = () => exitApp();
     process.on("SIGINT", handler);
     return () => {
       process.off("SIGINT", handler);
@@ -80,7 +85,7 @@ function AppContent() {
       return (
         <RootMenu
           onSelect={(value) => {
-            if (value === "exit") exit();
+            if (value === "exit") exitApp();
             else setScreen(value);
           }}
         />
