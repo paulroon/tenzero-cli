@@ -1,0 +1,58 @@
+{
+  "label": "Vanilla PHP",
+  "type": "vanilla-php",
+  "version": "1.0",
+  "options": {
+    "vendor": {
+      "label": "Vendor namespace (e.g. acme)",
+      "type": "text",
+      "default": "local"
+    },
+    "projectName": {
+      "label": "Project name",
+      "type": "text",
+      "default": ""
+    },
+    "licence": {
+      "label": "Licence",
+      "type": "select",
+      "options": [
+        { "label": "MIT", "value": "MIT" },
+        { "label": "GPL", "value": "GPL" },
+        { "label": "LGPL", "value": "LGPL" }
+      ],
+      "default": "MIT"
+    }
+  },
+  "pipeline": [
+    {
+      "type": "run",
+      "config": {
+        "command": "mkdir -p %projectName%",
+        "cwd": "."
+      }
+    },
+    {
+      "type": "copy",
+      "config": {
+        "source": "src",
+        "dest": "%projectName%/src"
+      }
+    },
+    {
+      "type": "copy",
+      "config": {
+        "source": "composer.json",
+        "dest": "%projectName%/composer.json"
+      },
+      "interpolate": true
+    },
+    {
+      "type": "run",
+      "config": {
+        "command": "cd %projectName% && composer install --no-interaction",
+        "cwd": "."
+      }
+    }
+  ]
+}

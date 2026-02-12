@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import type { ProjectBuilderAnswers } from "@/lib/generators/types";
-import type { PipelineStep, StepContext } from "@/lib/steps/types";
+import type { PipelineStep, Profile, StepContext } from "@/lib/steps/types";
 import { stepRegistry } from "@/lib/steps/registry";
 
 export type { ProjectBuilderAnswers };
@@ -10,6 +10,8 @@ export type { ProjectBuilderAnswers };
  * Generates a new project from builder answers and pipeline config.
  * Runs each pipeline step in order. Throws on failure.
  */
+export type { Profile } from "@/lib/steps/types";
+
 export async function generateProject(
   projectDirectory: string,
   answers: ProjectBuilderAnswers,
@@ -17,6 +19,7 @@ export async function generateProject(
     pipeline: PipelineStep[];
     configDir?: string;
     projectType: "symfony" | "nextjs" | "other";
+    profile: Profile;
   }
 ): Promise<void> {
   const projectName = answers.projectName?.trim();
@@ -34,6 +37,7 @@ export async function generateProject(
     projectPath,
     projectName,
     answers,
+    profile: options.profile,
     configDir: options.configDir,
   };
 
@@ -42,7 +46,11 @@ export async function generateProject(
     if (!executor) {
       throw new Error(`Unknown pipeline step type: ${step.type}`);
     }
-    await executor(ctx, step.config ?? {});
+    const config = {
+      ...step.config,
+      interpolate: step.interpolate ?? step.config?.interpolate ?? false,
+    };
+    await executor(ctx, config);
   }
 
   // Always run finalize at the end (implied for all projects)

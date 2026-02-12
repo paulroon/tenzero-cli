@@ -56,6 +56,10 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
             {config.name}
           </Text>
           <Text>
+            <Text bold>Email: </Text>
+            {config.email || "(not set)"}
+          </Text>
+          <Text>
             <Text bold>Project Directory: </Text>
             {config.projectDirectory}
           </Text>

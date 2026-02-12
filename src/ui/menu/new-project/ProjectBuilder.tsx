@@ -129,6 +129,7 @@ export default function ProjectBuilder({
               pipeline: builderConfig.pipeline,
               configDir: builderConfig._configDir,
               projectType: builderConfig.type,
+              profile: { name: config.name, email: config.email ?? "" },
             });
             const projectName = answers.projectName?.trim() ?? "";
             const projectPath = join(projectDirectory, projectName);

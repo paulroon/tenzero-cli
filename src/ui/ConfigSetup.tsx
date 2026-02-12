@@ -35,10 +35,15 @@ type Props = {
 
 export default function ConfigSetup({ onComplete, initialConfig }: Props) {
   const [name, setName] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [projectDirError, setProjectDirError] = useState<string | null>(null);
 
   const handleNameSubmit = (value: string) => {
     setName(value.trim());
+  };
+
+  const handleEmailSubmit = (value: string) => {
+    setEmail(value.trim());
   };
 
   const handleProjectDirSubmit = async (value: string) => {
@@ -53,6 +58,7 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
 
     const config = syncProjects({
       name: name!,
+      email: email ?? "",
       projectDirectory: resolvedPath,
       projects: [],
     });
@@ -91,6 +97,25 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
             defaultValue={initialConfig!.name}
             placeholder="Your name"
             onSubmit={handleNameSubmit}
+          />
+        </Box>
+      </MenuBox>
+    );
+  }
+
+  if (email === null) {
+    return (
+      <MenuBox flexDirection="column" padding={1}>
+        <Text color="yellow">
+          {isEditMode ? "Edit Config" : "Welcome to TenZero CLI"}
+        </Text>
+        <Text>Enter your email:</Text>
+        <Box marginTop={1}>
+          <TextInput
+            key="email"
+            defaultValue={initialConfig?.email}
+            placeholder="you@example.com"
+            onSubmit={handleEmailSubmit}
           />
         </Box>
       </MenuBox>

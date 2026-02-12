@@ -23,7 +23,7 @@
       "type": "run",
       "config": {
         "command": "symfony new --webapp %projectName%",
-        "cwd": "projectDirectory"
+        "cwd": "."
       }
     }
   ]

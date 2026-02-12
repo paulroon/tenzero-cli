@@ -5,6 +5,7 @@ import { parseJsonFile } from "./json";
 
 export type TzConfig = {
   name: string;
+  email: string;
   projectDirectory: string;
   projects: string[];
 };
@@ -57,7 +58,13 @@ export function loadConfig(): TzConfig | null {
     parsed.projects.every((p): p is string => typeof p === "string")
       ? parsed.projects
       : [];
-  return syncProjects({ name: parsed.name, projectDirectory, projects });
+  const email = typeof parsed.email === "string" ? parsed.email : "";
+  return syncProjects({
+    name: parsed.name,
+    email,
+    projectDirectory,
+    projects,
+  });
 }
 
 export function saveConfig(config: TzConfig): void {

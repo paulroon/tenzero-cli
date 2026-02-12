@@ -4,7 +4,7 @@ import type { StepContext, StepExecutor } from "./types";
 import { resolveVariables } from "./types";
 
 export const modifyFile: StepExecutor = async (ctx, config) => {
-  const resolved = resolveVariables(config, ctx.answers) as Record<string, unknown>;
+  const resolved = resolveVariables(config, ctx.answers, ctx.profile) as Record<string, unknown>;
   const file = resolved.file;
   const replacements = resolved.replacements;
   if (typeof file !== "string") {
