@@ -1,9 +1,9 @@
 import type { ComponentType } from "react";
 import type { RootMenuChoice } from "@/ui/menu/RootMenu";
 import type { TzConfig } from "@/lib/config";
-import ProjectBuilder from "@/ui/menu/new-project";
-import OptionsHandler from "@/ui/menu/options";
-import OpenExistingProjectHandler from "@/ui/menu/open-existing-project";
+import ProjectBuilder from "@/ui/menu/new-project/ProjectBuilder";
+import OptionsHandler from "@/ui/menu/options/OptionsHandler";
+import OpenExistingProjectHandler from "@/ui/menu/open-existing-project/OpenExistingProjectHandler";
 
 type HandlerProps = {
   config: TzConfig;
@@ -13,9 +13,9 @@ type HandlerProps = {
   onProjectSelect?: (projectPath: string) => void;
 };
 
-/** Handler map: each menu choice maps to a component */
+/** Handler map: menu choices that have screens (excludes Exit) */
 export const menuHandlers: Record<
-  RootMenuChoice,
+  Exclude<RootMenuChoice, "exit">,
   ComponentType<HandlerProps>
 > = {
   "new-project": ProjectBuilder,

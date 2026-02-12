@@ -7,6 +7,7 @@ export const ROOT_MENU_OPTIONS = [
   { label: "New Project", value: "new-project" },
   { label: "Options...", value: "options" },
   { label: "Open...", value: "open-existing-project" },
+  { label: "Exit", value: "exit" },
 ] as const;
 
 export type RootMenuChoice = (typeof ROOT_MENU_OPTIONS)[number]["value"];

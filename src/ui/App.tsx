@@ -1,11 +1,10 @@
-import { useState } from "react";
-import { Box, Text, useInput, useApp } from "ink";
+import { useEffect, useState } from "react";
+import { Box, Text, useApp } from "ink";
 import { Alert, Spinner } from "@inkjs/ui";
 import {
   CurrentProjectProvider,
   useCurrentProject,
 } from "@/contexts/CurrentProjectContext";
-import { InputModeProvider, useInputMode } from "@/contexts/InputModeContext";
 import { LoadingProvider } from "@/contexts/LoadingContext";
 import { useConfig } from "@/hooks/useConfig";
 import { useDependencyCheck } from "@/hooks/useDependencyCheck";
@@ -16,8 +15,6 @@ import RootMenu, { type RootMenuChoice } from "@/ui/menu/RootMenu";
 import { menuHandlers } from "@/ui/menu/handlers";
 import { clearScreen } from "@/lib/common";
 
-const EXIT_KEYS = ["x", "X"];
-
 const ROOT_MENU_SCREEN = "root-menu";
 
 function AppContent() {
@@ -27,18 +24,18 @@ function AppContent() {
     typeof ROOT_MENU_SCREEN | RootMenuChoice
   >(ROOT_MENU_SCREEN);
   const { exit } = useApp();
-  const { inputMode } = useInputMode();
   const { currentProject, setCurrentProjectFromPath } = useCurrentProject();
 
-  useInput(
-    (input) => {
-      if (!inputMode && EXIT_KEYS.includes(input)) {
-        clearScreen();
-        exit();
-      }
-    },
-    { isActive: true }
-  );
+  useEffect(() => {
+    const handler = () => {
+      clearScreen();
+      exit();
+    };
+    process.on("SIGINT", handler);
+    return () => {
+      process.off("SIGINT", handler);
+    };
+  }, [exit]);
 
   const renderMain = () => {
     if (depsStatus === "loading") {
@@ -80,9 +77,16 @@ function AppContent() {
       return <ProjectScreen onBack={() => setScreen(ROOT_MENU_SCREEN)} />;
     }
     if (screen === ROOT_MENU_SCREEN) {
-      return <RootMenu onSelect={(value) => setScreen(value)} />;
+      return (
+        <RootMenu
+          onSelect={(value) => {
+            if (value === "exit") exit();
+            else setScreen(value);
+          }}
+        />
+      );
     }
-    if (state.status === "ready") {
+    if (state.status === "ready" && screen !== "exit") {
       const Handler = menuHandlers[screen];
       const { config } = state;
       return (
@@ -114,14 +118,12 @@ function AppContent() {
   };
 
   const getFooterLeft = () => {
-    if (depsStatus === "loading" || depsStatus === "failed")
-      return "(x) exit";
-    if (state.status === "loading" || state.status === "missing")
-      return "(x) exit";
-    if (currentProject || screen !== ROOT_MENU_SCREEN) {
-      return "(x) exit  (b) back  (Esc) back";
-    }
-    return "(x) exit";
+    const isAtRoot =
+      depsStatus !== "ok" ||
+      state.status === "loading" ||
+      state.status === "missing" ||
+      (screen === ROOT_MENU_SCREEN && !currentProject);
+    return isAtRoot ? "" : "(Esc) back";
   };
 
   return (
@@ -138,11 +140,9 @@ function AppContent() {
 export default function App() {
   return (
     <LoadingProvider>
-      <InputModeProvider>
-        <CurrentProjectProvider>
-          <AppContent />
-        </CurrentProjectProvider>
-      </InputModeProvider>
+      <CurrentProjectProvider>
+        <AppContent />
+      </CurrentProjectProvider>
     </LoadingProvider>
   );
 }

@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Box, Text } from "ink";
 import MenuBox from "@/ui/components/MenuBox";
 import { Alert, TextInput } from "@inkjs/ui";
-import { useInputMode } from "@/contexts/InputModeContext";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
@@ -35,14 +34,8 @@ type Props = {
 };
 
 export default function ConfigSetup({ onComplete, initialConfig }: Props) {
-  const { setInputMode } = useInputMode();
   const [name, setName] = useState<string | null>(null);
   const [projectDirError, setProjectDirError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setInputMode(true);
-    return () => setInputMode(false);
-  }, [setInputMode]);
 
   const handleNameSubmit = (value: string) => {
     setName(value.trim());

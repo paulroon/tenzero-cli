@@ -4,7 +4,6 @@ import MenuBox from "@/ui/components/MenuBox";
 import { Alert, ConfirmInput, Select, TextInput } from "@inkjs/ui";
 import type { TzConfig } from "@/lib/config";
 import { useBackKey } from "@/hooks/useBackKey";
-import { useInputMode } from "@/contexts/InputModeContext";
 import { useLoading } from "@/contexts/LoadingContext";
 import {
   loadProjectBuilderConfig,
@@ -33,7 +32,6 @@ export default function ProjectBuilder({
   onConfigUpdate,
   onProjectSelect,
 }: Props) {
-  const { setInputMode } = useInputMode();
   const { setLoading } = useLoading();
   const [builderConfig, setBuilderConfig] = useState<ProjectBuilderConfig | null>(
     null
@@ -67,11 +65,6 @@ export default function ProjectBuilder({
       onBack();
     }
   });
-
-  useEffect(() => {
-    if (phase === "questions") setInputMode(true);
-    return () => setInputMode(false);
-  }, [phase, setInputMode]);
 
   const steps = builderConfig ? getApplicableSteps(builderConfig, answers) : [];
   const currentStep = steps[stepIndex];
@@ -119,7 +112,6 @@ export default function ProjectBuilder({
       return;
     }
 
-    setInputMode(false);
     setLoading(true);
 
     const runCreate = async () => {
@@ -179,7 +171,7 @@ export default function ProjectBuilder({
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="green">Project created successfully!</Text>
-        <Text dimColor>Press (b) or Esc to go back.</Text>
+        <Text dimColor>Press Esc to go back.</Text>
       </Box>
     );
   }
