@@ -1,18 +1,18 @@
 import { join } from "node:path";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import type { StepContext, StepExecutor } from "./types";
-import { resolveVariables } from "./types";
+import { resolveStepConfig } from "./types";
 
-export const modifyFile: StepExecutor = async (ctx, config) => {
-  const resolved = resolveVariables(config, ctx.answers, ctx.profile) as Record<string, unknown>;
+export const modify: StepExecutor = async (ctx, config) => {
+  const resolved = resolveStepConfig(config, ctx);
   const file = resolved.file;
   const replacements = resolved.replacements;
   if (typeof file !== "string") {
-    throw new Error("modifyFile step requires 'file' string");
+    throw new Error("modify step requires 'file' string");
   }
   const filePath = join(ctx.projectPath, file);
   if (!existsSync(filePath)) {
-    throw new Error(`modifyFile: file not found: ${filePath}`);
+    throw new Error(`modify: file not found: ${filePath}`);
   }
   let content = readFileSync(filePath, "utf-8");
   if (Array.isArray(replacements)) {

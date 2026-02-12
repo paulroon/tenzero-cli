@@ -1,8 +1,12 @@
 import { basename, dirname, join } from "node:path";
 import { existsSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { parseJsonFile } from "./json";
+import { parseJsonFile } from "@/lib/json";
+import {
+  getProjectsConfigDirs,
+  PROJECT_BUILDER_CONFIG_FILENAME,
+} from "@/lib/paths";
 import type { PipelineStep } from "@/lib/steps/types";
+import { ensureProjectType, type ProjectType } from "./project";
 
 export type BuilderStep =
   | { id: string; prompt: string; type: "text"; validate?: string }
@@ -17,7 +21,7 @@ export type BuilderStep =
 export type ProjectBuilderConfig = {
   id: string;
   label: string;
-  type: "symfony" | "nextjs" | "other";
+  type: ProjectType;
   version?: string;
   steps: BuilderStep[];
   pipeline: PipelineStep[];
@@ -37,24 +41,10 @@ type OptionDef =
       label: string;
       type: "select";
       options: Array<{ label: string; value: string }>;
+      when?: Record<string, string>;
       default?: string;
     };
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECTS_CONFIG_DIR = join(__dirname, "..", "..", "config", "projects");
-const CONFIG_FILENAME = "config.json";
-
-/**
- * Returns directories to search for project configs, in order.
- * Add ~/.tz/configs/ when supporting user configs.
- */
-export function getProjectsConfigDirs(): string[] {
-  return [PROJECTS_CONFIG_DIR];
-}
-
-/**
- * Lists available project configurations (one per subdirectory with config.json).
- */
 export function listProjectConfigs(): ProjectConfigMeta[] {
   const results: ProjectConfigMeta[] = [];
   for (const baseDir of getProjectsConfigDirs()) {
@@ -62,7 +52,7 @@ export function listProjectConfigs(): ProjectConfigMeta[] {
     const entries = readdirSync(baseDir, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-      const configPath = join(baseDir, entry.name, CONFIG_FILENAME);
+      const configPath = join(baseDir, entry.name, PROJECT_BUILDER_CONFIG_FILENAME);
       if (!existsSync(configPath)) continue;
       const parsed = parseJsonFile<{ label?: string }>(configPath);
       results.push({
@@ -97,7 +87,7 @@ function optionsToSteps(options: Record<string, OptionDef>): BuilderStep[] {
         validate: id === "projectName" ? "required" : undefined,
       });
     } else if (def.type === "select" && Array.isArray(def.options)) {
-      steps.push({
+      const step: BuilderStep = {
         id,
         prompt: def.label,
         type: "select",
@@ -105,7 +95,11 @@ function optionsToSteps(options: Record<string, OptionDef>): BuilderStep[] {
           (o): o is { label: string; value: string } =>
             o != null && typeof o.label === "string" && typeof o.value === "string"
         ),
-      });
+      };
+      if (def.when && typeof def.when === "object") {
+        step.when = def.when as Record<string, string>;
+      }
+      steps.push(step);
     }
   }
   return steps;
@@ -121,7 +115,7 @@ export function loadProjectBuilderConfig(
     } else {
       const dirs = getProjectsConfigDirs();
       for (const base of dirs) {
-        const candidate = join(base, idOrPath, CONFIG_FILENAME);
+        const candidate = join(base, idOrPath, PROJECT_BUILDER_CONFIG_FILENAME);
         if (existsSync(candidate)) {
           configPath = candidate;
           break;
@@ -146,28 +140,23 @@ export function loadProjectBuilderConfig(
 
   if (!parsed) return null;
 
-  const options = parsed.options && typeof parsed.options === "object"
-    ? (parsed.options as Record<string, OptionDef>)
-    : {};
+  const options =
+    parsed.options && typeof parsed.options === "object"
+      ? (parsed.options as Record<string, OptionDef>)
+      : {};
   const steps = optionsToSteps(options);
   const pipeline = parsePipeline(parsed.pipeline);
 
   const id = basename(dirname(configPath));
 
-  const defaultAnswers = getDefaultAnswers(options);
-  const validTypes = ["symfony", "nextjs", "other"] as const;
-  const configType = parsed.type && validTypes.includes(parsed.type as (typeof validTypes)[number])
-    ? (parsed.type as (typeof validTypes)[number])
-    : "other";
-
   return {
     id,
     label: typeof parsed.label === "string" ? parsed.label : id,
-    type: configType,
+    type: ensureProjectType(parsed.type),
     version: typeof parsed.version === "string" ? parsed.version : undefined,
     steps,
     pipeline,
-    defaultAnswers,
+    defaultAnswers: getDefaultAnswers(options),
     _configDir: configDir,
   };
 }
@@ -184,9 +173,35 @@ function getDefaultAnswers(
   return answers;
 }
 
+function matchesWhen(when: Record<string, string>, answers: Record<string, string>): boolean {
+  return Object.entries(when).every(
+    ([key, value]) => answers[key] === value
+  );
+}
+
 export function getApplicableSteps(
   config: ProjectBuilderConfig,
-  _answers: Record<string, string>
+  answers: Record<string, string>
 ): BuilderStep[] {
-  return config.steps;
+  return config.steps.filter((step) => {
+    if ("when" in step && step.when) {
+      return matchesWhen(step.when, answers);
+    }
+    return true;
+  });
+}
+
+export function getApplicablePipelineSteps(
+  pipeline: PipelineStep[],
+  answers: Record<string, string>
+): PipelineStep[] {
+  return pipeline.filter((step) => {
+    const when = step.when ?? step.config?.when;
+    if (when && typeof when === "object") {
+      return Object.entries(when as Record<string, string>).every(
+        ([key, value]) => answers[key] === value
+      );
+    }
+    return true;
+  });
 }

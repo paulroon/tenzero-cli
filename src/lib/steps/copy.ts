@@ -1,10 +1,16 @@
 import { join, dirname as pathDirname } from "node:path";
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import type { StepContext, StepExecutor } from "./types";
-import { resolveVariables } from "./types";
+import { resolveStepConfig, resolveVariables } from "./types";
 
-export const copyFiles: StepExecutor = async (ctx, config) => {
-  const resolved = resolveVariables(config, ctx.answers, ctx.profile) as Record<string, unknown>;
+export const copy: StepExecutor = async (ctx, config) => {
+  const resolved = resolveStepConfig(config, ctx);
   const source = resolved.source;
   const dest = resolved.dest;
   const interpolate = resolved.interpolate === true;
@@ -20,7 +26,11 @@ export const copyFiles: StepExecutor = async (ctx, config) => {
   }
   if (interpolate) {
     const content = readFileSync(sourcePath, "utf-8");
-    const interpolated = resolveVariables(content, ctx.answers, ctx.profile) as string;
+    const interpolated = resolveVariables(
+      content,
+      ctx.answers,
+      ctx.profile
+    ) as string;
     mkdirSync(pathDirname(destPath), { recursive: true });
     writeFileSync(destPath, interpolated, "utf-8");
   } else {

@@ -1,7 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { writeFileSync, existsSync, readdirSync } from "node:fs";
-import { parseJsonFile } from "./json";
+import { parseJsonFile } from "@/lib/json";
+import { getUserConfigPath, TZCONFIG_FILENAME } from "@/lib/paths";
 
 export type TzConfig = {
   name: string;
@@ -9,8 +10,6 @@ export type TzConfig = {
   projectDirectory: string;
   projects: string[];
 };
-
-export const TZCONFIG_FILENAME = ".tzconfig.json";
 
 /** Scan project directory for subdirectories that contain .tzconfig; returns directory names (not full paths). */
 export function scanProjects(projectDirectory: string): string[] {
@@ -39,12 +38,6 @@ export function syncProjects(
   return { ...config, projects };
 }
 
-const CONFIG_FILENAME = ".tz.json";
-
-export function getUserConfigPath(): string {
-  return join(homedir(), CONFIG_FILENAME);
-}
-
 export function loadConfig(): TzConfig | null {
   const parsed = parseJsonFile<Record<string, unknown>>(getUserConfigPath());
   if (!parsed || typeof parsed.name !== "string") return null;
@@ -68,6 +61,9 @@ export function loadConfig(): TzConfig | null {
 }
 
 export function saveConfig(config: TzConfig): void {
-  const path = getUserConfigPath();
-  writeFileSync(path, JSON.stringify(config, null, 2), "utf-8");
+  writeFileSync(
+    getUserConfigPath(),
+    JSON.stringify(config, null, 2),
+    "utf-8"
+  );
 }

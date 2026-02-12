@@ -1,9 +1,8 @@
 import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
-import { TZCONFIG_FILENAME } from "./config";
-import { saveProjectConfig } from "./projectConfig";
-import type { TzProjectConfig } from "./projectConfig";
-import type { ProjectBuilderAnswers } from "@/lib/generators/types";
+import { TZCONFIG_FILENAME } from "./paths";
+import { saveProjectConfig, type ProjectType } from "./config/project";
+import type { ProjectBuilderAnswers } from "./steps/types";
 
 const INITIAL_COMMIT_MESSAGE = "Initial Tz Project setup";
 
@@ -15,7 +14,7 @@ export async function finalizeTzProjectSetup(
   projectPath: string,
   config: {
     name: string;
-    type: TzProjectConfig["type"];
+    type: ProjectType;
     builderAnswers?: ProjectBuilderAnswers;
   }
 ): Promise<void> {

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Box, Text } from "ink";
-import MenuBox from "@/ui/components/MenuBox";
 import { Select } from "@inkjs/ui";
 import type { TzConfig } from "@/lib/config";
 import { useBackKey } from "@/hooks/useBackKey";
@@ -33,7 +32,7 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">Options</Text>
         <Text>Choose an option:</Text>
-        <MenuBox marginTop={1}>
+        <Box marginTop={1}>
           <Select
             options={OPTIONS_MENU_ITEMS.map((o) => ({
               label: o.label,
@@ -41,7 +40,7 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
             }))}
             onChange={(value) => setChoice(value as OptionChoice)}
           />
-        </MenuBox>
+        </Box>
       </Box>
     );
   }
@@ -50,7 +49,7 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">View Config</Text>
-        <MenuBox flexDirection="column" padding={1}>
+        <Box flexDirection="column" padding={1}>
           <Text>
             <Text bold>Name: </Text>
             {config.name}
@@ -63,7 +62,7 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
             <Text bold>Project Directory: </Text>
             {config.projectDirectory}
           </Text>
-        </MenuBox>
+        </Box>
       </Box>
     );
   }

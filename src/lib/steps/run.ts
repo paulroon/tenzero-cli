@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import type { StepContext, StepExecutor } from "./types";
-import { resolveVariables } from "./types";
+import { resolveStepConfig } from "./types";
 
 export const run: StepExecutor = async (ctx, config) => {
-  const resolved = resolveVariables(config, ctx.answers, ctx.profile) as Record<string, unknown>;
+  const resolved = resolveStepConfig(config, ctx);
   const command = resolved.command;
   const cwdOption = resolved.cwd as string | undefined;
 

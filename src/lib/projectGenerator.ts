@@ -1,17 +1,15 @@
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import type { ProjectBuilderAnswers } from "@/lib/generators/types";
-import type { PipelineStep, Profile, StepContext } from "@/lib/steps/types";
+import type { ProjectBuilderAnswers, PipelineStep, Profile, StepContext } from "@/lib/steps/types";
 import { stepRegistry } from "@/lib/steps/registry";
+import { getApplicablePipelineSteps } from "@/lib/config/projectBuilder";
 
-export type { ProjectBuilderAnswers };
+export type { ProjectBuilderAnswers, Profile } from "@/lib/steps/types";
 
 /**
  * Generates a new project from builder answers and pipeline config.
- * Runs each pipeline step in order. Throws on failure.
+ * Runs each pipeline step in order. Skips steps whose 'when' doesn't match answers.
  */
-export type { Profile } from "@/lib/steps/types";
-
 export async function generateProject(
   projectDirectory: string,
   answers: ProjectBuilderAnswers,
@@ -41,7 +39,9 @@ export async function generateProject(
     configDir: options.configDir,
   };
 
-  for (const step of options.pipeline) {
+  const applicableSteps = getApplicablePipelineSteps(options.pipeline, answers);
+
+  for (const step of applicableSteps) {
     const executor = stepRegistry[step.type];
     if (!executor) {
       throw new Error(`Unknown pipeline step type: ${step.type}`);
@@ -54,7 +54,7 @@ export async function generateProject(
   }
 
   // Always run finalize at the end (implied for all projects)
-  await stepRegistry.finalizeTzProjectSetup(ctx, {
+  await stepRegistry.finalize(ctx, {
     projectType: options.projectType,
   });
 }

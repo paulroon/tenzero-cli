@@ -1,17 +1,26 @@
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { TZCONFIG_FILENAME } from "./config";
-import { parseJsonFile } from "./json";
+import { parseJsonFile } from "@/lib/json";
+import { TZCONFIG_FILENAME } from "@/lib/paths";
+
+export const PROJECT_TYPES = ["symfony", "nextjs", "other"] as const;
+export type ProjectType = (typeof PROJECT_TYPES)[number];
+
+export function isValidProjectType(v: unknown): v is ProjectType {
+  return typeof v === "string" && PROJECT_TYPES.includes(v as ProjectType);
+}
+
+export function ensureProjectType(v: unknown): ProjectType {
+  return isValidProjectType(v) ? v : "other";
+}
 
 export type TzProjectConfig = {
   name: string;
   path: string;
-  type: "symfony" | "nextjs" | "other";
+  type: ProjectType;
   /** Answers from the project builder (projectName, projectType, symfonyAuth, etc.) */
   builderAnswers?: Record<string, string>;
 };
-
-const VALID_TYPES: TzProjectConfig["type"][] = ["symfony", "nextjs", "other"];
 
 export function loadProjectConfig(path: string): TzProjectConfig | null {
   const config = parseJsonFile<Partial<TzProjectConfig>>(
@@ -19,9 +28,7 @@ export function loadProjectConfig(path: string): TzProjectConfig | null {
   );
   if (!config) return null;
 
-  const type = config.type && VALID_TYPES.includes(config.type)
-    ? config.type
-    : "other";
+  const type = ensureProjectType(config.type);
 
   const builderAnswers =
     config.builderAnswers &&

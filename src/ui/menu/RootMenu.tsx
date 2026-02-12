@@ -1,5 +1,4 @@
 import { Box, Text } from "ink";
-import MenuBox from "@/ui/components/MenuBox";
 import { Alert, Select } from "@inkjs/ui";
 import { useConfig } from "@/hooks/useConfig";
 
@@ -29,7 +28,7 @@ export default function RootMenu({ onSelect }: Props) {
     );
   }
   return state.status === "ready" ? (
-    <MenuBox flexDirection="column" padding={1}>
+    <Box flexDirection="column" padding={1}>
       <Text color="yellow">Main Menu</Text>
       <Text>Choose an option:</Text>
       <Box marginTop={1}>
@@ -42,6 +41,6 @@ export default function RootMenu({ onSelect }: Props) {
           onChange={(value) => onSelect(value as RootMenuChoice)}
         />
       </Box>
-    </MenuBox>
+        </Box>
   ) : null;
 }

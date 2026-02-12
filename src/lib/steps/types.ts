@@ -1,4 +1,4 @@
-import type { ProjectBuilderAnswers } from "@/lib/generators/types";
+export type ProjectBuilderAnswers = Record<string, string>;
 
 export type Profile = {
   name: string;
@@ -25,6 +25,8 @@ export type PipelineStep = {
   config?: Record<string, unknown>;
   /** When true (copy step), interpolate file contents with variables. Default false. */
   interpolate?: boolean;
+  /** Only run step when answers match. e.g. { "projectType": "symfony" } */
+  when?: Record<string, string>;
 };
 
 function getNested(obj: Record<string, unknown>, path: string): unknown {
@@ -73,4 +75,12 @@ export function resolveVariables(
     return resolved;
   }
   return value;
+}
+
+/** Resolve step config with variables. Use in steps that need answer/profile interpolation. */
+export function resolveStepConfig(
+  config: Record<string, unknown>,
+  ctx: StepContext
+): Record<string, unknown> {
+  return resolveVariables(config, ctx.answers, ctx.profile) as Record<string, unknown>;
 }

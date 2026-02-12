@@ -1,10 +1,8 @@
 import { useMemo } from "react";
 import { join } from "node:path";
 import { Box, Text } from "ink";
-import MenuBox from "@/ui/components/MenuBox";
 import { Select } from "@inkjs/ui";
-import type { TzConfig } from "@/lib/config";
-import { loadProjectConfig } from "@/lib/projectConfig";
+import { loadProjectConfig, type TzConfig } from "@/lib/config";
 import { useBackKey } from "@/hooks/useBackKey";
 
 type Props = {
@@ -47,7 +45,7 @@ export default function OpenExistingProjectHandler({
     <Box flexDirection="column" gap={1}>
       <Text color="yellow">Open Existing Project</Text>
       <Text>Choose a project:</Text>
-      <MenuBox marginTop={1}>
+      <Box marginTop={1}>
         <Select
           options={options}
           onChange={(value) => {
@@ -55,7 +53,7 @@ export default function OpenExistingProjectHandler({
             onProjectSelect?.(fullPath);
           }}
         />
-      </MenuBox>
+      </Box>
     </Box>
   );
 }

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Box, Text } from "ink";
-import MenuBox from "@/ui/components/MenuBox";
 import { Alert, TextInput } from "@inkjs/ui";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -70,7 +69,7 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
 
   if (name === null && !initialConfig) {
     return (
-      <MenuBox flexDirection="column" padding={1}>
+      <Box flexDirection="column" padding={1}>
         <Text color="yellow">Welcome to TenZero CLI</Text>
         <Text>No config found. Please enter your name:</Text>
         <Box marginTop={1}>
@@ -80,13 +79,13 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
             onSubmit={handleNameSubmit}
           />
         </Box>
-      </MenuBox>
+      </Box>
     );
   }
 
   if (name === null) {
     return (
-      <MenuBox flexDirection="column" padding={1}>
+      <Box flexDirection="column" padding={1}>
         <Text color="yellow">
           {isEditMode ? "Edit Config" : "Welcome to TenZero CLI"}
         </Text>
@@ -99,13 +98,13 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
             onSubmit={handleNameSubmit}
           />
         </Box>
-      </MenuBox>
+      </Box>
     );
   }
 
   if (email === null) {
     return (
-      <MenuBox flexDirection="column" padding={1}>
+      <Box flexDirection="column" padding={1}>
         <Text color="yellow">
           {isEditMode ? "Edit Config" : "Welcome to TenZero CLI"}
         </Text>
@@ -118,12 +117,12 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
             onSubmit={handleEmailSubmit}
           />
         </Box>
-      </MenuBox>
+      </Box>
     );
   }
 
   return (
-    <MenuBox flexDirection="column" padding={1}>
+    <Box flexDirection="column" padding={1}>
       <Text color="yellow">
         {isEditMode ? "Edit Config" : "Welcome to TenZero CLI"}
       </Text>
@@ -143,6 +142,6 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
           </Alert>
         </Box>
       )}
-    </MenuBox>
+    </Box>
   );
 }

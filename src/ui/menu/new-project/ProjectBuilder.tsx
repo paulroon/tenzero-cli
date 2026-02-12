@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
 import { Box, Text } from "ink";
-import MenuBox from "@/ui/components/MenuBox";
 import { Alert, ConfirmInput, Select, TextInput } from "@inkjs/ui";
-import type { TzConfig } from "@/lib/config";
-import { useBackKey } from "@/hooks/useBackKey";
-import { useLoading } from "@/contexts/LoadingContext";
 import {
+  type TzConfig,
   listProjectConfigs,
   loadProjectBuilderConfig,
   getApplicableSteps,
+  saveConfig,
+  syncProjects,
   type ProjectBuilderConfig,
   type ProjectConfigMeta,
-} from "@/lib/projectBuilderConfig";
-import { saveConfig, syncProjects } from "@/lib/config";
+} from "@/lib/config";
+import { useBackKey } from "@/hooks/useBackKey";
+import { useLoading } from "@/contexts/LoadingContext";
 import { generateProject } from "@/lib/projectGenerator";
 import { join } from "node:path";
 
@@ -169,7 +169,7 @@ export default function ProjectBuilder({
         <Text color="yellow">New Project</Text>
         <Text>Select project type:</Text>
         <Box marginTop={1}>
-          <MenuBox>
+          <Box>
             <Select
               options={availableConfigs.map((c) => ({
                 label: c.label,
@@ -177,7 +177,7 @@ export default function ProjectBuilder({
               }))}
               onChange={handleConfigSelect}
             />
-          </MenuBox>
+          </Box>
         </Box>
       </Box>
     );
@@ -210,14 +210,14 @@ export default function ProjectBuilder({
         <Text>
           Create {builderConfig.label} with these options?
         </Text>
-        <MenuBox flexDirection="column" padding={1} marginTop={1}>
+        <Box flexDirection="column" padding={1} marginTop={1}>
           {steps.map((step) => (
             <Text key={step.id}>
               <Text bold>{step.prompt} </Text>
               {answers[step.id] ?? "(empty)"}
             </Text>
           ))}
-        </MenuBox>
+        </Box>
         {error && (
           <Box marginTop={1}>
             <Alert variant="error">{error}</Alert>
@@ -257,7 +257,7 @@ export default function ProjectBuilder({
             onSubmit={handleAnswer}
           />
         ) : (
-          <MenuBox>
+          <Box>
             <Select
               options={currentStep.options.map((o) => ({
                 label: o.label,
@@ -265,7 +265,7 @@ export default function ProjectBuilder({
               }))}
               onChange={handleAnswer}
             />
-          </MenuBox>
+          </Box>
         )}
       </Box>
     </Box>
