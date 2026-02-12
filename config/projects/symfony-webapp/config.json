@@ -1,0 +1,30 @@
+{
+  "label": "Symfony Web App",
+  "type": "symfony",
+  "version": "1.0",
+  "options": {
+    "projectName": {
+      "label": "Project name",
+      "type": "text",
+      "default": ""
+    },
+    "symfonyAuth": {
+      "label": "Auth type",
+      "type": "select",
+      "options": [
+        {"label": "No auth", "value": "no-auth"},
+        {"label": "Simple auth", "value": "simple-auth"}
+      ],
+      "default": "no-auth"
+    }
+  },
+  "pipeline": [
+    {
+      "type": "run",
+      "config": {
+        "command": "symfony new --webapp %projectName%",
+        "cwd": "projectDirectory"
+      }
+    }
+  ]
+}

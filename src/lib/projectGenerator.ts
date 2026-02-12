@@ -1,19 +1,23 @@
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import { createSymfonyApp } from "@/lib/generators/symfony";
 import type { ProjectBuilderAnswers } from "@/lib/generators/types";
-import { finalizeTzProjectSetup } from "@/lib/projectSetup";
+import type { PipelineStep, StepContext } from "@/lib/steps/types";
+import { stepRegistry } from "@/lib/steps/registry";
 
 export type { ProjectBuilderAnswers };
 
 /**
- * Generates a new project from builder answers. Creates the project in
- * projectDirectory and throws on failure. Finalizes with .tzconfig, .gitignore,
- * and initial git commit.
+ * Generates a new project from builder answers and pipeline config.
+ * Runs each pipeline step in order. Throws on failure.
  */
 export async function generateProject(
   projectDirectory: string,
-  answers: ProjectBuilderAnswers
+  answers: ProjectBuilderAnswers,
+  options: {
+    pipeline: PipelineStep[];
+    configDir?: string;
+    projectType: "symfony" | "nextjs" | "other";
+  }
 ): Promise<void> {
   const projectName = answers.projectName?.trim();
   if (!projectName) {
@@ -25,16 +29,24 @@ export async function generateProject(
     throw new Error(`Project already exists: ${projectName}`);
   }
 
-  const projectType = answers.projectType;
-  if (projectType !== "symfony") {
-    throw new Error("Only Symfony projects are supported for creation at this time.");
+  const ctx: StepContext = {
+    projectDirectory,
+    projectPath,
+    projectName,
+    answers,
+    configDir: options.configDir,
+  };
+
+  for (const step of options.pipeline) {
+    const executor = stepRegistry[step.type];
+    if (!executor) {
+      throw new Error(`Unknown pipeline step type: ${step.type}`);
+    }
+    await executor(ctx, step.config ?? {});
   }
 
-  await createSymfonyApp(projectDirectory, projectName, answers);
-
-  await finalizeTzProjectSetup(projectPath, {
-    name: projectName,
-    type: "symfony",
-    builderAnswers: answers,
+  // Always run finalize at the end (implied for all projects)
+  await stepRegistry.finalizeTzProjectSetup(ctx, {
+    projectType: options.projectType,
   });
 }

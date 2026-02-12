@@ -6,15 +6,17 @@ import type { TzConfig } from "@/lib/config";
 import { useBackKey } from "@/hooks/useBackKey";
 import { useLoading } from "@/contexts/LoadingContext";
 import {
+  listProjectConfigs,
   loadProjectBuilderConfig,
   getApplicableSteps,
   type ProjectBuilderConfig,
+  type ProjectConfigMeta,
 } from "@/lib/projectBuilderConfig";
 import { saveConfig, syncProjects } from "@/lib/config";
 import { generateProject } from "@/lib/projectGenerator";
 import { join } from "node:path";
 
-type Phase = "questions" | "confirm" | "done";
+type Phase = "config-select" | "questions" | "confirm" | "done";
 
 type Props = {
   config: TzConfig;
@@ -32,21 +34,33 @@ export default function ProjectBuilder({
   onProjectSelect,
 }: Props) {
   const { setLoading } = useLoading();
-  const [builderConfig, setBuilderConfig] = useState<ProjectBuilderConfig | null>(
-    null
+  const [availableConfigs, setAvailableConfigs] = useState<ProjectConfigMeta[]>(
+    []
   );
+  const [builderConfig, setBuilderConfig] =
+    useState<ProjectBuilderConfig | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [stepIndex, setStepIndex] = useState(0);
-  const [phase, setPhase] = useState<Phase>("questions");
+  const [phase, setPhase] = useState<Phase>("config-select");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const loaded = loadProjectBuilderConfig();
-    setBuilderConfig(loaded ?? null);
+    const configs = listProjectConfigs();
+    setAvailableConfigs(configs);
+    if (configs.length === 1) {
+      const loaded = loadProjectBuilderConfig(configs[0].id);
+      if (loaded) {
+        setBuilderConfig(loaded);
+        setAnswers(loaded.defaultAnswers ?? {});
+        setPhase("questions");
+      }
+    }
   }, []);
 
   useBackKey(() => {
-    if (phase === "questions" && stepIndex > 0) {
+    if (phase === "config-select") {
+      onBack();
+    } else if (phase === "questions" && stepIndex > 0) {
       const steps = builderConfig ? getApplicableSteps(builderConfig, answers) : [];
       const prevStep = steps[stepIndex - 1];
       if (prevStep) {
@@ -55,6 +69,8 @@ export default function ProjectBuilder({
         setAnswers(newAnswers);
         setStepIndex(stepIndex - 1);
       }
+    } else if (phase === "questions" && stepIndex === 0) {
+      setPhase("config-select");
     } else if (phase === "confirm") {
       setPhase("questions");
       setStepIndex(
@@ -68,20 +84,29 @@ export default function ProjectBuilder({
   const steps = builderConfig ? getApplicableSteps(builderConfig, answers) : [];
   const currentStep = steps[stepIndex];
 
+  const handleConfigSelect = (id: string) => {
+    const loaded = loadProjectBuilderConfig(id);
+    if (loaded) {
+      setBuilderConfig(loaded);
+      setAnswers(loaded.defaultAnswers ?? {});
+      setStepIndex(0);
+      setPhase("questions");
+    }
+  };
+
   const handleAnswer = (value: string) => {
     if (!currentStep) return;
     const newAnswers = { ...answers, [currentStep.id]: value };
     setError(null);
 
-    // Compute steps with the NEW answer - conditional steps (e.g. symfonyAuth)
-    // only appear once their "when" condition is satisfied
     const stepsAfterAnswer = builderConfig
       ? getApplicableSteps(builderConfig, newAnswers)
       : [];
     const completedIndex = stepsAfterAnswer.findIndex(
       (s) => s.id === currentStep.id
     );
-    const hasNextStep = completedIndex >= 0 && completedIndex < stepsAfterAnswer.length - 1;
+    const hasNextStep =
+      completedIndex >= 0 && completedIndex < stepsAfterAnswer.length - 1;
 
     setAnswers(newAnswers);
     if (hasNextStep) {
@@ -99,7 +124,12 @@ export default function ProjectBuilder({
       await new Promise<void>((resolve) => {
         setTimeout(async () => {
           try {
-            await generateProject(projectDirectory, answers);
+            if (!builderConfig) throw new Error("Config not loaded");
+            await generateProject(projectDirectory, answers, {
+              pipeline: builderConfig.pipeline,
+              configDir: builderConfig._configDir,
+              projectType: builderConfig.type,
+            });
             const projectName = answers.projectName?.trim() ?? "";
             const projectPath = join(projectDirectory, projectName);
             const updatedConfig = syncProjects(config);
@@ -122,12 +152,42 @@ export default function ProjectBuilder({
     runCreate();
   };
 
+  if (phase === "config-select") {
+    if (availableConfigs.length === 0) {
+      return (
+        <Box flexDirection="column" gap={1}>
+          <Text color="yellow">New Project</Text>
+          <Alert variant="error" title="No configs found">
+            No project configurations found in config/projects/
+          </Alert>
+        </Box>
+      );
+    }
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">New Project</Text>
+        <Text>Select project type:</Text>
+        <Box marginTop={1}>
+          <MenuBox>
+            <Select
+              options={availableConfigs.map((c) => ({
+                label: c.label,
+                value: c.id,
+              }))}
+              onChange={handleConfigSelect}
+            />
+          </MenuBox>
+        </Box>
+      </Box>
+    );
+  }
+
   if (!builderConfig) {
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">New Project</Text>
         <Alert variant="error" title="Config not found">
-          Could not load project-builder.json
+          Could not load project configuration
         </Alert>
       </Box>
     );
@@ -146,12 +206,14 @@ export default function ProjectBuilder({
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">Confirm</Text>
-        <Text>Create project with these options?</Text>
+        <Text>
+          Create {builderConfig.label} with these options?
+        </Text>
         <MenuBox flexDirection="column" padding={1} marginTop={1}>
-          {Object.entries(answers).map(([key, value]) => (
-            <Text key={key}>
-              <Text bold>{key}: </Text>
-              {value}
+          {steps.map((step) => (
+            <Text key={step.id}>
+              <Text bold>{step.prompt} </Text>
+              {answers[step.id] ?? "(empty)"}
             </Text>
           ))}
         </MenuBox>
@@ -182,7 +244,7 @@ export default function ProjectBuilder({
 
   return (
     <Box flexDirection="column" gap={1}>
-      <Text color="yellow">New Project</Text>
+      <Text color="yellow">{builderConfig.label}</Text>
       <Text>
         {currentStep.prompt} ({stepIndex + 1}/{steps.length})
       </Text>
