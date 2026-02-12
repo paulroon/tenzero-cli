@@ -10,6 +10,7 @@ import {
   type TzConfig,
 } from "@/lib/config";
 import { getMakefileTargets } from "@/lib/makefile";
+import { callShell } from "@/lib/shell";
 import { rmSync } from "node:fs";
 
 const RED = "\x1b[31m";
@@ -54,15 +55,9 @@ export default function Dashboard({
       if (!currentProject) return;
       if (input.toLowerCase() === "o" && !key.ctrl && !key.meta) {
         const editor = config.editor?.trim() || DEFAULT_EDITOR;
-        const shell = process.env.SHELL || "zsh";
-        Bun.spawn(
-          [shell, "-l", "-c", `${editor} ${JSON.stringify(currentProject.path)}`],
-          {
-            detached: true,
-            stdin: "ignore",
-            stdout: "ignore",
-            stderr: "ignore",
-          }
+        void callShell(
+          `${editor} ${JSON.stringify(currentProject.path)}`,
+          { loginShell: true, detached: true }
         );
       }
     },
@@ -76,13 +71,10 @@ export default function Dashboard({
 
   const handleMakeSelect = async (target: string) => {
     if (!currentProject) return;
-    const proc = Bun.spawn(["make", target], {
+    await callShell("make", [target], {
       cwd: currentProject.path,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
+      throwOnNonZero: false,
     });
-    await proc.exited;
   };
 
   if (!currentProject) return null;

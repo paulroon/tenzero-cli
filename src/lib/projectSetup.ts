@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { callShell } from "./shell";
 import { TZCONFIG_FILENAME } from "./paths";
 import { saveProjectConfig, type ProjectType } from "./config/project";
 import type { ProjectBuilderAnswers } from "./steps/types";
@@ -45,14 +46,9 @@ export async function finalizeTzProjectSetup(
 }
 
 async function runGit(cwd: string, args: string[]): Promise<void> {
-  const proc = Bun.spawn(["git", ...args], {
+  await callShell("git", args, {
     cwd,
     stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
+    throwOnNonZero: true,
   });
-  const exitCode = await proc.exited;
-  if (exitCode !== 0) {
-    throw new Error(`git ${args.join(" ")} exited with code ${exitCode}`);
-  }
 }

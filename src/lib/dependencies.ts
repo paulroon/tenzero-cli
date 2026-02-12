@@ -1,15 +1,16 @@
+import { callShell } from "./shell";
+
 /** Check if a command exists by running it with optional args (exit code 0 = exists) */
 export async function isCommandInstalled(
   cmd: string,
   args: string[] = ["version"]
 ): Promise<boolean> {
   try {
-    const proc = Bun.spawn([cmd, ...args], {
+    const { exitCode } = await callShell(cmd, args, {
       stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
+      quiet: true,
+      throwOnNonZero: false,
     });
-    const exitCode = await proc.exited;
     return exitCode === 0;
   } catch {
     return false;
