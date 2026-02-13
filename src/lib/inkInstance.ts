@@ -1,13 +1,16 @@
+import type { Instance } from "ink";
+
 /**
  * Holds the Ink render instance so exit handlers can call instance.clear()
- * for proper terminal cleanup. Set by cli.tsx after render().
+ * for proper terminal cleanup, and unmount() to suspend for shell sessions.
+ * Set by cli.tsx after render().
  */
-let instance: { clear: () => void } | null = null;
+let instance: Instance | null = null;
 
-export function setInkInstance(i: { clear: () => void } | null): void {
+export function setInkInstance(i: Instance | null): void {
   instance = i;
 }
 
-export function getInkInstance(): { clear: () => void } | null {
+export function getInkInstance(): Instance | null {
   return instance;
 }

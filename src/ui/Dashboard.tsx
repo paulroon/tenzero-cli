@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
+import { render } from "ink";
 import { Alert, ConfirmInput, Select } from "@inkjs/ui";
 import { useBackKey } from "@/hooks/useBackKey";
 import { useCurrentProject } from "@/contexts/CurrentProjectContext";
@@ -11,6 +12,9 @@ import {
 } from "@/lib/config";
 import { getMakefileTargets } from "@/lib/makefile";
 import { callShell } from "@/lib/shell";
+import { setResumeProjectPath } from "@/lib/resumeState";
+import { getInkInstance, setInkInstance } from "@/lib/inkInstance";
+import App from "@/ui/App";
 import { rmSync } from "node:fs";
 
 const RED = "\x1b[31m";
@@ -76,6 +80,29 @@ export default function Dashboard({
               ? ["open", url]
               : ["xdg-open", url];
         void callShell(cmd[0], cmd.slice(1), { detached: true });
+      }
+      if (
+        input.toLowerCase() === "s" &&
+        !key.ctrl &&
+        !key.meta &&
+        isDockerized
+      ) {
+        void (async () => {
+          setResumeProjectPath(currentProject.path);
+          const instance = getInkInstance();
+          await instance?.unmount();
+          try {
+            await callShell("docker", ["compose", "exec", "-it", "app", "sh"], {
+              cwd: currentProject.path,
+              stdin: "inherit",
+              throwOnNonZero: false,
+            });
+          } catch {
+            /* user may have Ctrl+C or container may have exited */
+          }
+          const newInstance = render(<App />);
+          setInkInstance(newInstance);
+        })();
       }
     },
     { isActive: !!currentProject }

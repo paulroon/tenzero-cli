@@ -2,9 +2,11 @@ import {
   createContext,
   useContext,
   useState,
+  useEffect,
   type ReactNode,
 } from "react";
 import { loadProjectConfig, type TzProjectConfig } from "@/lib/config";
+import { consumeResumeProjectPath } from "@/lib/resumeState";
 
 type CurrentProjectContextValue = {
   currentProject: TzProjectConfig | null;
@@ -19,6 +21,22 @@ const CurrentProjectContext = createContext<CurrentProjectContextValue | null>(
 export function CurrentProjectProvider({ children }: { children: ReactNode }) {
   const [currentProject, setCurrentProject] =
     useState<TzProjectConfig | null>(null);
+
+  useEffect(() => {
+    const path = consumeResumeProjectPath();
+    if (path) {
+      const config = loadProjectConfig(path);
+      if (config) {
+        setCurrentProject(config);
+      } else {
+        setCurrentProject({
+          name: path.split(/[/\\]/).pop() ?? "unknown",
+          path,
+          type: "other",
+        });
+      }
+    }
+  }, []);
 
   const setCurrentProjectFromPath = (path: string) => {
     const config = loadProjectConfig(path);

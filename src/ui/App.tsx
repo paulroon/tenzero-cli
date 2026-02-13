@@ -136,11 +136,10 @@ function AppContent() {
     if (screen === ROOT_MENU_SCREEN && !currentProject && state.status === "ready")
       return "(Esc) exit";
     if (currentProject) {
-      const launchHint =
-        currentProject.builderAnswers?.dockerize === "yes"
-          ? "  (l) launch"
-          : "";
-      return `(Esc) back  (o) open in editor${launchHint}`;
+      const isDockerized =
+        currentProject.builderAnswers?.dockerize === "yes";
+      const hints = isDockerized ? "  (l) launch  (s) shell" : "";
+      return `(Esc) back  (o) open in editor${hints}`;
     }
     return isAtRoot ? "" : "(Esc) back";
   };
