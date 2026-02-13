@@ -10,7 +10,7 @@ export const deleteStep: StepExecutor = async (ctx, config) => {
   if (typeof file !== "string") {
     throw new Error("delete step requires 'file' string");
   }
-  const filePath = join(ctx.projectDirectory, file);
+  const filePath = join(ctx.projectPath, file);
   if (!existsSync(filePath)) {
     if (required) {
       throw new Error(`delete: file not found: ${filePath}`);

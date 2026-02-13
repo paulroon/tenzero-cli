@@ -78,41 +78,91 @@ tz
 
 ### Project configs
 
-Project templates live under `config/projects/<id>/`. Each has a `config.json`:
+Project templates live under `config/projects/<id>/`. Builder config files can be:
 
-```json
-{
-  "label": "Symfony Web App",
-  "type": "symfony",
-  "options": {
-    "projectName": { "label": "Project name", "type": "text", "default": "" },
-    "symfonyAuth": {
-      "label": "Auth type",
-      "type": "select",
-      "options": [
-        { "label": "No auth", "value": "no-auth" },
-        { "label": "Simple auth", "value": "simple-auth" }
-      ],
-      "default": "no-auth",
-      "when": { "projectType": "symfony" }
-    }
-  },
-  "pipeline": [
-    { "type": "run", "config": { "command": "symfony new --webapp %projectName%", "cwd": "." } }
-  ]
-}
+- `config.yaml` (preferred)
+- `config.yml`
+- `config.json` (legacy)
+
+Each config is declarative and defines:
+
+- `questions` - what the user answers
+- optional `ui.groups` - question grouping hints for the TUI
+- optional `dependencies` - dependency references by id
+- `pipeline` - ordered generation steps
+
+```yaml
+label: Symfony Web App
+type: symfony
+version: "2.0"
+
+questions:
+  - id: projectName
+    label: Project name
+    type: string
+    required: true
+
+  - id: symfonyAuth
+    label: Auth type
+    type: select
+    default: no-auth
+    options:
+      - label: No auth
+        value: no-auth
+      - label: Simple auth
+        value: simple-auth
+
+  - id: dockerize
+    label: Dockerize
+    type: boolean
+    default: false
+
+ui:
+  groups:
+    - id: build-options
+      label: Build options
+      type: boolean-checklist
+      questionIds:
+        - dockerize
+        - enableMetrics
+
+dependencies:
+  - symfony-cli
+  - composer
+  - id: make
+    when:
+      dockerize: "true"
+
+pipeline:
+  - type: createProjectDirectory
+    label: Create project directory
+
+  - type: run
+    label: Create Symfony app
+    config:
+      command: symfony new --webapp .
 ```
 
-**Interpolation:** Use `%projectName%`, `%profile.name%`, `%profile.email%` (and `{{key}}`) in commands and copied files. Set `interpolate: true` on a `copy` step to process file contents.
+**Interpolation:** Use `{{projectName}}`, `{{profile.name}}`, `{{profile.email}}` in commands/paths and template file content.
 
-**Pipeline steps:** `run`, `copy`, `modify`, `delete`, plus an implied `finalize` (git init, `.tzconfig.json`, `.gitignore`, initial commit).
+**Question types:** `string` (or `text`), `select`, and `boolean`.
+
+**UI groups (optional):** If omitted, questions are asked one-by-one (existing behavior). When present, `boolean-checklist` groups 2+ boolean questions into a single screen.
+
+**Pipeline steps:** `createProjectDirectory`, `run`, `copy`, `modify`, `append`, `delete`, plus an implied `finalize` (git init, `.tzconfig.json`, `.gitignore`, initial commit). Steps can include an optional `label` shown in generation output.
+
+**Path semantics:** After `createProjectDirectory`, all step paths are relative to the new project root. No `cwd` is needed in pipeline definitions.
+
+**When conditions:** Use `when` at the step level (preferred). All keys must match current answers.
+
+**Backward compatibility:** Existing `options`-based JSON configs still load.
 
 ---
 
 ## Extending
 
 1. Add a directory under `config/projects/<template-id>/`
-2. Add `config.json` with `options` and `pipeline`
+2. Add `config.yaml` with `questions` and `pipeline`
 3. Optionally add supporting files (e.g. `composer.json`, `src/`) for the `copy` step
 
 User configs in `~/.tz/configs/` are also scanned and merged with built-in templates.

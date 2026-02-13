@@ -22,7 +22,7 @@ export const copy: StepExecutor = async (ctx, config) => {
   const sourcePath = ctx.configDir
     ? join(ctx.configDir, source)
     : join(process.cwd(), source);
-  const destPath = join(ctx.projectDirectory, dest);
+  const destPath = join(ctx.projectPath, dest);
   if (!existsSync(sourcePath)) {
     throw new Error(`copy: source not found: ${sourcePath}`);
   }

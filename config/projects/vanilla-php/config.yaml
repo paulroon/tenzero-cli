@@ -1,0 +1,50 @@
+label: Vanilla PHP
+type: vanilla-php
+version: "2.0"
+
+questions:
+  - id: vendor
+    label: Vendor namespace (e.g. acme)
+    type: string
+    default: local
+
+  - id: projectName
+    label: Project name
+    type: string
+    default: ""
+    required: true
+
+  - id: licence
+    label: Licence
+    type: select
+    default: MIT
+    options:
+      - MIT
+      - GPL
+      - LGPL
+
+dependencies:
+  - composer
+  - not-here
+
+pipeline:
+  - type: createProjectDirectory
+    label: Create project directory
+
+  - type: copy
+    label: Copy PHP source files
+    config:
+      source: src
+      dest: src
+
+  - type: copy
+    label: Copy Composer manifest
+    config:
+      source: composer.json
+      dest: composer.json
+      interpolate: true
+
+  - type: run
+    label: Install Composer dependencies
+    config:
+      command: composer install --no-interaction

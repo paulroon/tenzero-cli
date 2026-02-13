@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import { Box, Text, useApp } from "ink";
-import { Alert, Spinner } from "@inkjs/ui";
+import { useApp } from "ink";
+import { Spinner } from "@inkjs/ui";
 import {
   CurrentProjectProvider,
   useCurrentProject,
 } from "@/contexts/CurrentProjectContext";
 import { useConfig } from "@/hooks/useConfig";
-import { useDependencyCheck } from "@/hooks/useDependencyCheck";
 import AppLayout from "@/ui/components/AppLayout";
 import ConfigSetup from "@/ui/ConfigSetup";
 import Dashboard from "@/ui/Dashboard";
@@ -17,8 +16,11 @@ import { getInkInstance } from "@/lib/inkInstance";
 
 const ROOT_MENU_SCREEN = "root-menu";
 
+function isDockerizedValue(value: unknown): boolean {
+  return value === "yes" || value === "true";
+}
+
 function AppContent() {
-  const { status: depsStatus, failedDeps } = useDependencyCheck();
   const [state, setConfig] = useConfig();
   const [screen, setScreen] = useState<
     typeof ROOT_MENU_SCREEN | RootMenuChoice
@@ -42,35 +44,6 @@ function AppContent() {
   }, [exit]);
 
   const renderMain = () => {
-    if (depsStatus === "loading") {
-      return (
-        <Box flexDirection="column" padding={1}>
-          <Spinner label="Checking dependencies" />
-        </Box>
-      );
-    }
-
-    if (depsStatus === "failed") {
-      return (
-        <>
-          {failedDeps.map((dep) => (
-            <Box key={dep.name} flexDirection="column" gap={0} marginBottom={1}>
-              <Alert variant="error" title={`${dep.name} not found`}>
-                {dep.name} is required but was not found on your system.
-              </Alert>
-              <Box marginTop={1} flexDirection="column" gap={0}>
-                {dep.instructions.map((line, i) => (
-                  <Text key={i} dimColor={!!line}>
-                    {line || " "}
-                  </Text>
-                ))}
-              </Box>
-            </Box>
-          ))}
-        </>
-      );
-    }
-
     if (state.status === "loading") {
       return <Spinner label="Loading" />;
     }
@@ -118,8 +91,6 @@ function AppContent() {
   };
 
   const getStatus = () => {
-    if (depsStatus === "loading") return "Loading";
-    if (depsStatus === "failed") return "Error";
     if (state.status === "loading") return "Loading";
     if (state.status === "missing") return "Setup";
     if (currentProject) return `Project: ${currentProject.name}`;
@@ -129,17 +100,15 @@ function AppContent() {
 
   const getFooterLeft = () => {
     const isAtRoot =
-      depsStatus !== "ok" ||
       state.status === "loading" ||
       state.status === "missing" ||
       (screen === ROOT_MENU_SCREEN && !currentProject);
     if (screen === ROOT_MENU_SCREEN && !currentProject && state.status === "ready")
       return "(Esc) exit";
     if (currentProject) {
-      const isDockerized =
-        currentProject.builderAnswers?.dockerize === "yes";
-      const hints = isDockerized ? "  (l) launch  (s) shell" : "";
-      return `(Esc) back  (o) open in editor${hints}`;
+      const isDockerized = isDockerizedValue(currentProject.builderAnswers?.dockerize);
+      const hints = isDockerized ? "  (o) open  (s) shell" : "";
+      return `(Esc) back  (e) editor${hints}`;
     }
     return isAtRoot ? "" : "(Esc) back";
   };

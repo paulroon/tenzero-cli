@@ -1,4 +1,6 @@
 import { callShell } from "./shell";
+import { DEPENDENCY_CATALOG } from "./dependencyCatalog";
+import type { DependencyRef } from "./config/projectBuilder";
 
 /** Check if a command exists by running it with optional args (exit code 0 = exists) */
 export async function isCommandInstalled(
@@ -17,86 +19,58 @@ export async function isCommandInstalled(
   }
 }
 
-const NODESOURCE = [
-  "Linux/macOS:       curl -fsSL https://deb.nodesource.com/setup_20.x | bash -",
-  "                   apt-get install -y nodejs",
-];
+const DEFAULT_DEPENDENCY_IDS = ["symfony-cli", "node", "npm", "yarn", "pnpm", "bun"];
 
-function brewInstructions(
-  installLine: string,
-  url: string,
-  brewPkg: string
-): readonly string[] {
-  return [
-    `${installLine}: ${url}`,
-    "",
-    `macOS (Homebrew):  brew install ${brewPkg}`,
-    ...NODESOURCE,
-  ];
+type DependencyStatus = {
+  id: string;
+  name: string;
+  installed: boolean;
+  instructions: readonly string[];
+};
+
+function matchesWhen(
+  when: Record<string, string> | undefined,
+  answers: Record<string, string>
+): boolean {
+  if (!when) return true;
+  return Object.entries(when).every(([key, value]) => answers[key] === value);
 }
 
-const DEPENDENCIES = [
-  {
-    name: "symfony CLI",
-    command: "symfony",
-    checkArgs: ["version"] as const,
-    instructions: [
-      "Install the Symfony CLI: symfony.com/download",
-      "",
-      "macOS (Homebrew):  brew install symfony-cli/tap/symfony-cli",
-      "Linux/macOS:       curl -sS https://get.symfony.com/cli/installer | bash",
-    ],
-  },
-  {
-    name: "node",
-    command: "node",
-    checkArgs: ["--version"] as const,
-    instructions: brewInstructions(
-      "Install Node.js",
-      "nodejs.org/en/download/",
-      "node"
-    ),
-  },
-  {
-    name: "npm",
-    command: "npm",
-    checkArgs: ["--version"] as const,
-    instructions: brewInstructions("Install npm", "npmjs.com/get-npm", "npm"),
-  },
-  {
-    name: "yarn",
-    command: "yarn",
-    checkArgs: ["--version"] as const,
-    instructions: brewInstructions(
-      "Install Yarn",
-      "yarnpkg.com/getting-started/install",
-      "yarn"
-    ),
-  },
-  {
-    name: "pnpm",
-    command: "pnpm",
-    checkArgs: ["--version"] as const,
-    instructions: brewInstructions(
-      "Install pnpm",
-      "pnpmjs.com/installation",
-      "pnpm"
-    ),
-  },
-  {
-    name: "bun",
-    command: "bun",
-    checkArgs: ["--version"] as const,
-    instructions: brewInstructions("Install Bun", "bun.sh/install", "bun"),
-  },
-];
-
 export const getDependencyStatus = async () => {
+  const dependencies = DEFAULT_DEPENDENCY_IDS
+    .map((id) => DEPENDENCY_CATALOG[id])
+    .filter(Boolean);
   return Promise.all(
-    DEPENDENCIES.map(async ({ name, command, checkArgs, instructions }) => ({
+    dependencies.map(async ({ name, command, checkArgs, instructions }) => ({
       name,
       installed: await isCommandInstalled(command, [...checkArgs]),
       instructions,
     }))
+  );
+};
+
+export const getProjectDependencyStatus = async (
+  deps: DependencyRef[],
+  answers: Record<string, string>
+): Promise<DependencyStatus[]> => {
+  const applicable = deps.filter((dep) => matchesWhen(dep.when, answers));
+  return Promise.all(
+    applicable.map(async ({ id }) => {
+      const catalog = DEPENDENCY_CATALOG[id];
+      if (!catalog) {
+        return {
+          id,
+          name: id,
+          installed: false,
+          instructions: [`Dependency '${id}' is not defined in dependencyCatalog.`],
+        };
+      }
+      return {
+        id: catalog.id,
+        name: catalog.name,
+        installed: await isCommandInstalled(catalog.command, [...catalog.checkArgs]),
+        instructions: catalog.instructions,
+      };
+    })
   );
 };

@@ -18,7 +18,7 @@ export const append: StepExecutor = async (ctx, config) => {
     throw new Error("append step requires 'content' string");
   }
 
-  const filePath = join(ctx.projectDirectory, file);
+  const filePath = join(ctx.projectPath, file);
   const existing = existsSync(filePath)
     ? readFileSync(filePath, "utf-8")
     : "";

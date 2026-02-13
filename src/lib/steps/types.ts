@@ -22,6 +22,10 @@ export type StepExecutor = (
 
 export type PipelineStep = {
   type: string;
+  /** Optional human-friendly label shown in generation UI. */
+  label?: string;
+  /** Optional extra context for docs/UIs. */
+  description?: string;
   config?: Record<string, unknown>;
   /** When true (copy step), interpolate file contents with variables. Default false. */
   interpolate?: boolean;

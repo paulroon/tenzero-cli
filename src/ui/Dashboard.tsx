@@ -32,6 +32,10 @@ type Props = {
   onConfigUpdate?: (config: TzConfig) => void;
 };
 
+function isDockerizedValue(value: unknown): boolean {
+  return value === "yes" || value === "true";
+}
+
 export default function Dashboard({
   onBack,
   config,
@@ -54,12 +58,12 @@ export default function Dashboard({
     }
   });
 
-  const isDockerized = currentProject?.builderAnswers?.dockerize === "yes";
+  const isDockerized = isDockerizedValue(currentProject?.builderAnswers?.dockerize);
 
   useInput(
     (input, key) => {
       if (!currentProject) return;
-      if (input.toLowerCase() === "o" && !key.ctrl && !key.meta) {
+      if (input.toLowerCase() === "e" && !key.ctrl && !key.meta) {
         const editor = config.editor?.trim() || DEFAULT_EDITOR;
         void callShell(
           `${editor} ${JSON.stringify(currentProject.path)}`,
@@ -67,7 +71,7 @@ export default function Dashboard({
         );
       }
       if (
-        input.toLowerCase() === "l" &&
+        input.toLowerCase() === "o" &&
         !key.ctrl &&
         !key.meta &&
         isDockerized
@@ -125,7 +129,7 @@ export default function Dashboard({
 
   const handleDeleteConfirm = async () => {
     try {
-      const isDockerized = currentProject.builderAnswers?.dockerize === "yes";
+      const isDockerized = isDockerizedValue(currentProject.builderAnswers?.dockerize);
       if (isDockerized && makeTargets.includes("down")) {
         try {
           await callShell("make", ["down"], {

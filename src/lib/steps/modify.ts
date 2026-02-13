@@ -23,7 +23,7 @@ export const modify: StepExecutor = async (ctx, config) => {
   if (typeof file !== "string") {
     throw new Error("modify step requires 'file' string");
   }
-  const filePath = join(ctx.projectDirectory, file);
+  const filePath = join(ctx.projectPath, file);
   if (!existsSync(filePath)) {
     throw new Error(`modify: file not found: ${filePath}`);
   }

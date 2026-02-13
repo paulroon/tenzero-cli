@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { parseJsonFile } from "@/lib/json";
 import { TZ_PROJECT_CONFIG_FILENAME } from "@/lib/paths";
 
-export const PROJECT_TYPES = ["symfony", "nextjs", "other"] as const;
+export const PROJECT_TYPES = ["symfony", "nextjs", "vanilla-php", "other"] as const;
 export type ProjectType = (typeof PROJECT_TYPES)[number];
 
 export function isValidProjectType(v: unknown): v is ProjectType {

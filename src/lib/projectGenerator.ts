@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import type { ProjectBuilderAnswers, PipelineStep, Profile, StepContext } from "@/lib/steps/types";
 import { stepRegistry } from "@/lib/steps/registry";
 import { getApplicablePipelineSteps } from "@/lib/config/projectBuilder";
+import type { ProjectType } from "@/lib/config/project";
 import { getStepLabel } from "./projectGenerator/stepLabels";
 
 export type { ProjectBuilderAnswers, Profile } from "@/lib/steps/types";
@@ -27,7 +28,7 @@ export async function generateProject(
   options: {
     pipeline: PipelineStep[];
     configDir?: string;
-    projectType: "symfony" | "nextjs" | "other";
+    projectType: ProjectType;
     profile: Profile;
     onProgress?: GenerationProgressCallback;
   }

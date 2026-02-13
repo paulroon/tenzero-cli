@@ -10,8 +10,14 @@ export const USER_CONFIG_FILENAME = ".tz.json";
 /** Project config file (.tzconfig.json) */
 export const TZ_PROJECT_CONFIG_FILENAME = ".tzconfig.json";
 
-/** Project builder config filename within a project type directory */
-export const PROJECT_BUILDER_CONFIG_FILENAME = "config.json";
+/** Preferred project builder config filename within a project type directory */
+export const PROJECT_BUILDER_CONFIG_FILENAME = "config.yaml";
+/** Supported project builder config filenames, in priority order */
+export const PROJECT_BUILDER_CONFIG_FILENAMES = [
+  "config.yaml",
+  "config.yml",
+  "config.json",
+] as const;
 
 export function getUserConfigPath(): string {
   return join(homedir(), USER_CONFIG_FILENAME);

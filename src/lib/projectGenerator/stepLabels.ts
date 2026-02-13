@@ -8,6 +8,9 @@ export function getStepLabel(
   step: PipelineStep,
   ctx: StepContext
 ): string {
+  if (typeof step.label === "string" && step.label.trim().length > 0) {
+    return step.label;
+  }
   const config = step.config ?? {};
   const resolved = resolveVariables(config, ctx.answers, ctx.profile) as Record<
     string,
@@ -15,6 +18,8 @@ export function getStepLabel(
   >;
 
   switch (step.type) {
+    case "createProjectDirectory":
+      return "Create project directory";
     case "run": {
       const cmd = (resolved.command ?? config.command ?? "") as string;
       return truncate(cmd, 60);

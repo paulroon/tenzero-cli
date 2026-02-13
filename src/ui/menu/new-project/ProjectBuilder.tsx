@@ -1,14 +1,23 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Box, Text } from "ink";
-import { Alert, ConfirmInput, Select, TextInput } from "@inkjs/ui";
+import {
+  Alert,
+  ConfirmInput,
+  MultiSelect,
+  Select,
+  Spinner,
+  TextInput,
+} from "@inkjs/ui";
 import {
   type TzConfig,
   listProjectConfigs,
   loadProjectBuilderConfig,
+  getApplicableQuestionNodes,
   getApplicableSteps,
   getApplicablePipelineSteps,
   saveConfig,
   syncProjects,
+  type BuilderQuestionNode,
   type ProjectBuilderConfig,
   type ProjectConfigMeta,
 } from "@/lib/config";
@@ -16,6 +25,7 @@ import { useBackKey } from "@/hooks/useBackKey";
 import { generateProject } from "@/lib/projectGenerator";
 import { getStepLabel } from "@/lib/projectGenerator/stepLabels";
 import { GenerationError } from "@/lib/projectGenerator/GenerationError";
+import { getProjectDependencyStatus } from "@/lib/dependencies";
 import GenerationOutput, {
   type GenerationStep,
 } from "@/ui/components/GenerationOutput";
@@ -59,19 +69,69 @@ export default function ProjectBuilder({
     stdout?: string;
     stderr?: string;
   } | null>(null);
+  const [checkingDependencies, setCheckingDependencies] = useState(false);
+  const [failedDeps, setFailedDeps] = useState<
+    Array<{ name: string; instructions: readonly string[] }>
+  >([]);
+  const [failedConfigLabel, setFailedConfigLabel] = useState<string | null>(null);
+  const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
+
+  const getNodeKey = (node: BuilderQuestionNode): string =>
+    node.kind === "step" ? `step:${node.step.id}` : `group:${node.id}`;
+
+  const getQuestionNodes = (
+    cfg: ProjectBuilderConfig | null,
+    currentAnswers: Record<string, string>
+  ): BuilderQuestionNode[] =>
+    cfg ? getApplicableQuestionNodes(cfg, currentAnswers) : [];
+
+  const selectConfig = useCallback(async (id: string) => {
+    const loaded = loadProjectBuilderConfig(id);
+    if (!loaded) return;
+    const configLabel = loaded.label;
+    setCheckingDependencies(true);
+    setFailedDeps([]);
+    setFailedConfigLabel(null);
+
+    try {
+      const statuses = await getProjectDependencyStatus(
+        loaded.dependencies,
+        loaded.defaultAnswers ?? {}
+      );
+      const missing = statuses.filter((d) => !d.installed);
+      if (missing.length > 0) {
+        setFailedDeps(
+          missing.map((d) => ({ name: d.name, instructions: d.instructions }))
+        );
+        setFailedConfigLabel(configLabel);
+        setBuilderConfig(null);
+        setAnswers({});
+        setStepIndex(0);
+        setPhase("config-select");
+        return;
+      }
+
+      setBuilderConfig(loaded);
+      setAnswers(loaded.defaultAnswers ?? {});
+      setStepIndex(0);
+      setPhase("questions");
+    } finally {
+      setCheckingDependencies(false);
+    }
+  }, []);
 
   useEffect(() => {
     const configs = listProjectConfigs();
     setAvailableConfigs(configs);
     if (configs.length === 1) {
-      const loaded = loadProjectBuilderConfig(configs[0].id);
-      if (loaded) {
-        setBuilderConfig(loaded);
-        setAnswers(loaded.defaultAnswers ?? {});
-        setPhase("questions");
-      }
+      setSelectedConfigId(configs[0].id);
     }
   }, []);
+
+  useEffect(() => {
+    if (!selectedConfigId) return;
+    void selectConfig(selectedConfigId);
+  }, [selectedConfigId, selectConfig]);
 
   useBackKey(() => {
     if (phase === "config-select") {
@@ -83,52 +143,76 @@ export default function ProjectBuilder({
       setGenerationError(null);
       setGenerationLastOutput(null);
     } else if (phase === "questions" && stepIndex > 0) {
-      const steps = builderConfig ? getApplicableSteps(builderConfig, answers) : [];
-      const prevStep = steps[stepIndex - 1];
-      if (prevStep) {
-        const newAnswers = { ...answers };
-        delete newAnswers[prevStep.id];
-        setAnswers(newAnswers);
-        setStepIndex(stepIndex - 1);
+      const nodes = getQuestionNodes(builderConfig, answers);
+      const prevNode = nodes[stepIndex - 1];
+      if (!prevNode) return;
+      const newAnswers = { ...answers };
+      if (prevNode.kind === "step") {
+        delete newAnswers[prevNode.step.id];
+      } else {
+        for (const groupedStep of prevNode.steps) {
+          delete newAnswers[groupedStep.id];
+        }
       }
+      setAnswers(newAnswers);
+      setStepIndex(stepIndex - 1);
     } else if (phase === "questions" && stepIndex === 0) {
       setPhase("config-select");
     } else if (phase === "confirm") {
       setPhase("questions");
       setStepIndex(
-        builderConfig ? getApplicableSteps(builderConfig, answers).length - 1 : 0
+        builderConfig ? getQuestionNodes(builderConfig, answers).length - 1 : 0
       );
     } else {
       onBack();
     }
   });
 
+  const questionNodes = getQuestionNodes(builderConfig, answers);
   const steps = builderConfig ? getApplicableSteps(builderConfig, answers) : [];
-  const currentStep = steps[stepIndex];
+  const currentNode = questionNodes[stepIndex];
 
-  const handleConfigSelect = (id: string) => {
-    const loaded = loadProjectBuilderConfig(id);
-    if (loaded) {
-      setBuilderConfig(loaded);
-      setAnswers(loaded.defaultAnswers ?? {});
-      setStepIndex(0);
-      setPhase("questions");
+  const handleConfigSelect = useCallback((id: string) => {
+    setSelectedConfigId((prev) => (prev === id ? prev : id));
+  }, []);
+
+  const handleStepAnswer = (value: string) => {
+    if (!currentNode || currentNode.kind !== "step") return;
+    const nodeKey = getNodeKey(currentNode);
+    const newAnswers = { ...answers, [currentNode.step.id]: value };
+    setError(null);
+
+    const nodesAfterAnswer = getQuestionNodes(builderConfig, newAnswers);
+    const completedIndex = nodesAfterAnswer.findIndex(
+      (node) => getNodeKey(node) === nodeKey
+    );
+    const hasNextStep =
+      completedIndex >= 0 && completedIndex < nodesAfterAnswer.length - 1;
+
+    setAnswers(newAnswers);
+    if (hasNextStep) {
+      setStepIndex(completedIndex + 1);
+    } else {
+      setPhase("confirm");
     }
   };
 
-  const handleAnswer = (value: string) => {
-    if (!currentStep) return;
-    const newAnswers = { ...answers, [currentStep.id]: value };
+  const handleBooleanGroupSubmit = (selectedIds: string[]) => {
+    if (!currentNode || currentNode.kind !== "boolean-group") return;
+    const nodeKey = getNodeKey(currentNode);
+    const selected = new Set(selectedIds);
+    const newAnswers = { ...answers };
+    for (const step of currentNode.steps) {
+      newAnswers[step.id] = selected.has(step.id) ? "true" : "false";
+    }
     setError(null);
 
-    const stepsAfterAnswer = builderConfig
-      ? getApplicableSteps(builderConfig, newAnswers)
-      : [];
-    const completedIndex = stepsAfterAnswer.findIndex(
-      (s) => s.id === currentStep.id
+    const nodesAfterAnswer = getQuestionNodes(builderConfig, newAnswers);
+    const completedIndex = nodesAfterAnswer.findIndex(
+      (node) => getNodeKey(node) === nodeKey
     );
     const hasNextStep =
-      completedIndex >= 0 && completedIndex < stepsAfterAnswer.length - 1;
+      completedIndex >= 0 && completedIndex < nodesAfterAnswer.length - 1;
 
     setAnswers(newAnswers);
     if (hasNextStep) {
@@ -228,9 +312,37 @@ export default function ProjectBuilder({
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">New Project</Text>
         <Text>Select project type:</Text>
+        {checkingDependencies && (
+          <Box marginTop={1}>
+            <Spinner label="Checking template dependencies" />
+          </Box>
+        )}
+        {failedDeps.length > 0 && (
+          <Box flexDirection="column" marginTop={1} gap={1}>
+            <Alert variant="error" title="Missing dependencies">
+              {failedConfigLabel
+                ? `${failedConfigLabel} requires missing dependencies.`
+                : "Selected template requires missing dependencies."}
+            </Alert>
+            {failedDeps.map((dep) => (
+              <Box key={dep.name} flexDirection="column" gap={0}>
+                <Text color="red">{dep.name} not found</Text>
+                {dep.instructions.map((line, index) => (
+                  <Text key={`${dep.name}-${index}`} dimColor={!!line}>
+                    {line || " "}
+                  </Text>
+                ))}
+              </Box>
+            ))}
+          </Box>
+        )}
         <Box marginTop={1}>
           <Box>
             <Select
+              isDisabled={checkingDependencies}
+              defaultValue={
+                selectedConfigId ?? availableConfigs[0]?.id ?? undefined
+              }
               options={availableConfigs.map((c) => ({
                 label: c.label,
                 value: c.id,
@@ -304,7 +416,7 @@ export default function ProjectBuilder({
     );
   }
 
-  if (!currentStep) {
+  if (!currentNode) {
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">New Project</Text>
@@ -313,27 +425,62 @@ export default function ProjectBuilder({
     );
   }
 
+  if (currentNode.kind === "boolean-group") {
+    const defaultValue = currentNode.steps
+      .filter((step) => answers[step.id] === "true")
+      .map((step) => step.id);
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">{builderConfig.label}</Text>
+        <Text>
+          {currentNode.label} ({stepIndex + 1}/{questionNodes.length})
+        </Text>
+        <Box marginTop={1}>
+          <MultiSelect
+            options={currentNode.steps.map((step) => ({
+              label: step.prompt,
+              value: step.id,
+            }))}
+            defaultValue={defaultValue}
+            onSubmit={handleBooleanGroupSubmit}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  const currentStep = currentNode.step;
   return (
     <Box flexDirection="column" gap={1}>
       <Text color="yellow">{builderConfig.label}</Text>
       <Text>
-        {currentStep.prompt} ({stepIndex + 1}/{steps.length})
+        {currentStep.prompt} ({stepIndex + 1}/{questionNodes.length})
       </Text>
       <Box marginTop={1}>
         {currentStep.type === "text" ? (
           <TextInput
             key={currentStep.id}
             placeholder="Enter value"
-            onSubmit={handleAnswer}
+            onSubmit={handleStepAnswer}
           />
-        ) : (
+        ) : currentStep.type === "select" ? (
           <Box>
             <Select
               options={currentStep.options.map((o) => ({
                 label: o.label,
                 value: o.value,
               }))}
-              onChange={handleAnswer}
+              onChange={handleStepAnswer}
+            />
+          </Box>
+        ) : (
+          <Box>
+            <Select
+              options={[
+                { label: currentStep.trueLabel ?? "Yes", value: "true" },
+                { label: currentStep.falseLabel ?? "No", value: "false" },
+              ]}
+              onChange={handleStepAnswer}
             />
           </Box>
         )}
