@@ -179,8 +179,11 @@ export default function ProjectBuilder({
   const handleConfigSelect = useCallback((id: string) => {
     if (checkingDependencies) return;
     if (id === CONFIG_PLACEHOLDER_VALUE) return;
-    setSelectedConfigId(id);
-    setSelectionRequest((prev) => prev + 1);
+    setSelectedConfigId((prev) => {
+      if (prev === id) return prev;
+      setSelectionRequest((count) => count + 1);
+      return id;
+    });
   }, [checkingDependencies]);
 
   const handleStepAnswer = (value: string) => {
