@@ -285,6 +285,17 @@
         {
             "type": "run",
             "config": {
+                "command": "cd %projectName% && make console tz:auth:adduser admin@example.com admin",
+                "cwd": "."
+            },
+            "when": {
+                "dockerize": "yes",
+                "symfonyAuth": "simple-auth"
+            }
+        },
+        {
+            "type": "run",
+            "config": {
                 "command": "cd %projectName% && make cc",
                 "cwd": "."
             },
