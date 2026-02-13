@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { writeFileSync, existsSync, readdirSync } from "node:fs";
 import { parseJsonFile } from "@/lib/json";
-import { getUserConfigPath, TZCONFIG_FILENAME } from "@/lib/paths";
+import { getUserConfigPath, TZ_PROJECT_CONFIG_FILENAME } from "@/lib/paths";
 
 export const DEFAULT_EDITOR = "cursor";
 
@@ -25,7 +25,7 @@ export function scanProjects(projectDirectory: string): string[] {
         (e) =>
           e.isDirectory() &&
           !e.name.startsWith(".") &&
-          existsSync(join(projectDirectory, e.name, TZCONFIG_FILENAME))
+          existsSync(join(projectDirectory, e.name, TZ_PROJECT_CONFIG_FILENAME))
       )
       .map((e) => e.name)
       .sort();

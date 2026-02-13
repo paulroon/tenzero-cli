@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
 import { parseJsonFile } from "@/lib/json";
-import { TZCONFIG_FILENAME } from "@/lib/paths";
+import { TZ_PROJECT_CONFIG_FILENAME } from "@/lib/paths";
 
 export const PROJECT_TYPES = ["symfony", "nextjs", "other"] as const;
 export type ProjectType = (typeof PROJECT_TYPES)[number];
@@ -24,7 +24,7 @@ export type TzProjectConfig = {
 
 export function loadProjectConfig(path: string): TzProjectConfig | null {
   const config = parseJsonFile<Partial<TzProjectConfig>>(
-    join(path, TZCONFIG_FILENAME)
+    join(path, TZ_PROJECT_CONFIG_FILENAME)
   );
   if (!config) return null;
 
@@ -49,7 +49,7 @@ export function saveProjectConfig(
   projectPath: string,
   config: Partial<TzProjectConfig>
 ): void {
-  const configPath = join(projectPath, TZCONFIG_FILENAME);
+  const configPath = join(projectPath, TZ_PROJECT_CONFIG_FILENAME);
   writeFileSync(
     configPath,
     JSON.stringify({ ...config, path: projectPath }, null, 2),

@@ -198,9 +198,7 @@ export function getApplicablePipelineSteps(
   return pipeline.filter((step) => {
     const when = step.when ?? step.config?.when;
     if (when && typeof when === "object") {
-      return Object.entries(when as Record<string, string>).every(
-        ([key, value]) => answers[key] === value
-      );
+      return matchesWhen(when as Record<string, string>, answers);
     }
     return true;
   });

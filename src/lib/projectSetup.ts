@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { callShell } from "./shell";
-import { TZCONFIG_FILENAME } from "./paths";
+import { TZ_PROJECT_CONFIG_FILENAME } from "./paths";
 import { saveProjectConfig, type ProjectType } from "./config/project";
 import type { ProjectBuilderAnswers } from "./steps/types";
 
@@ -27,15 +27,15 @@ export async function finalizeTzProjectSetup(
   const gitignorePath = join(projectPath, ".gitignore");
   if (existsSync(gitignorePath)) {
     const content = readFileSync(gitignorePath, "utf-8");
-    if (!content.includes(TZCONFIG_FILENAME)) {
-      const ignoreEntry = `\n###> TenZero ###\n${TZCONFIG_FILENAME}\n###< TenZero ###\n`;
+    if (!content.includes(TZ_PROJECT_CONFIG_FILENAME)) {
+      const ignoreEntry = `\n###> TenZero ###\n${TZ_PROJECT_CONFIG_FILENAME}\n###< TenZero ###\n`;
       const entry = content.endsWith("\n")
         ? `${ignoreEntry}\n`
         : `\n${ignoreEntry}\n`;
       writeFileSync(gitignorePath, content + entry, "utf-8");
     }
   } else {
-    writeFileSync(gitignorePath, `${TZCONFIG_FILENAME}\n`, "utf-8");
+    writeFileSync(gitignorePath, `${TZ_PROJECT_CONFIG_FILENAME}\n`, "utf-8");
   }
 
   saveProjectConfig(projectPath, config);

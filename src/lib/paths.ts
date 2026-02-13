@@ -8,8 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export const USER_CONFIG_FILENAME = ".tz.json";
 
 /** Project config file (.tzconfig.json) */
-export const PROJECT_CONFIG_FILENAME = ".tzconfig.json";
-export const TZCONFIG_FILENAME = PROJECT_CONFIG_FILENAME;
+export const TZ_PROJECT_CONFIG_FILENAME = ".tzconfig.json";
 
 /** Project builder config filename within a project type directory */
 export const PROJECT_BUILDER_CONFIG_FILENAME = "config.json";

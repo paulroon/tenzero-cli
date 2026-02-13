@@ -5,7 +5,6 @@ import {
   CurrentProjectProvider,
   useCurrentProject,
 } from "@/contexts/CurrentProjectContext";
-import { LoadingProvider } from "@/contexts/LoadingContext";
 import { useConfig } from "@/hooks/useConfig";
 import { useDependencyCheck } from "@/hooks/useDependencyCheck";
 import AppLayout from "@/ui/components/AppLayout";
@@ -136,7 +135,13 @@ function AppContent() {
       (screen === ROOT_MENU_SCREEN && !currentProject);
     if (screen === ROOT_MENU_SCREEN && !currentProject && state.status === "ready")
       return "(Esc) exit";
-    if (currentProject) return "(Esc) back  (o) open in editor";
+    if (currentProject) {
+      const launchHint =
+        currentProject.builderAnswers?.dockerize === "yes"
+          ? "  (l) launch"
+          : "";
+      return `(Esc) back  (o) open in editor${launchHint}`;
+    }
     return isAtRoot ? "" : "(Esc) back";
   };
 
@@ -153,10 +158,8 @@ function AppContent() {
 
 export default function App() {
   return (
-    <LoadingProvider>
-      <CurrentProjectProvider>
-        <AppContent />
-      </CurrentProjectProvider>
-    </LoadingProvider>
+    <CurrentProjectProvider>
+      <AppContent />
+    </CurrentProjectProvider>
   );
 }

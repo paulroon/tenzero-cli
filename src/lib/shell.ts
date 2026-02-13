@@ -75,8 +75,7 @@ export async function callShell(
   argsOrOptions?: string[] | CallShellOptions,
   maybeOptions?: CallShellOptions
 ): Promise<CallShellResult> {
-  const isShellCommand =
-    !Array.isArray(argsOrOptions) || argsOrOptions.length === 0;
+  const isShellCommand = !Array.isArray(argsOrOptions);
   const args = isShellCommand ? [] : (argsOrOptions as string[]);
   const options = (isShellCommand ? argsOrOptions : maybeOptions) as
     | CallShellOptions

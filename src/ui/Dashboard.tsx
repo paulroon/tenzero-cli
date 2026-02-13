@@ -50,6 +50,8 @@ export default function Dashboard({
     }
   });
 
+  const isDockerized = currentProject?.builderAnswers?.dockerize === "yes";
+
   useInput(
     (input, key) => {
       if (!currentProject) return;
@@ -59,6 +61,21 @@ export default function Dashboard({
           `${editor} ${JSON.stringify(currentProject.path)}`,
           { loginShell: true, detached: true }
         );
+      }
+      if (
+        input.toLowerCase() === "l" &&
+        !key.ctrl &&
+        !key.meta &&
+        isDockerized
+      ) {
+        const url = "http://localhost:8000";
+        const cmd =
+          process.platform === "win32"
+            ? ["cmd", "/c", "start", url]
+            : process.platform === "darwin"
+              ? ["open", url]
+              : ["xdg-open", url];
+        void callShell(cmd[0], cmd.slice(1), { detached: true });
       }
     },
     { isActive: !!currentProject }

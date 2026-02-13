@@ -47,14 +47,15 @@ export const modify: StepExecutor = async (ctx, config) => {
     typeof appendIfMissing.marker === "string" &&
     !content.includes(appendIfMissing.marker)
   ) {
-    const toAppend =
-      appendRaw?.interpolate === true && typeof appendIfMissing.content === "string"
-        ? appendIfMissing.content
-        : typeof appendRaw?.content === "string"
-          ? appendRaw.content
-          : typeof appendIfMissing.content === "string"
-            ? appendIfMissing.content
-            : "";
+    // When interpolate is false, use raw content so Symfony params like %kernel.project_dir% stay literal
+    let toAppend = "";
+    if (appendRaw?.interpolate === true && typeof appendIfMissing.content === "string") {
+      toAppend = appendIfMissing.content; // resolved (interpolated)
+    } else if (typeof appendRaw?.content === "string") {
+      toAppend = appendRaw.content; // raw (uninterpolated)
+    } else if (typeof appendIfMissing.content === "string") {
+      toAppend = appendIfMissing.content;
+    }
     if (toAppend) {
       const sep = content.length > 0 && !content.endsWith("\n") ? "\n\n" : "\n";
       content = content + sep + toAppend;
