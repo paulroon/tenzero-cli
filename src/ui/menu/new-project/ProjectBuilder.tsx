@@ -47,6 +47,8 @@ type Props = {
   onProjectSelect?: (projectPath: string) => void;
 };
 
+const CONFIG_PLACEHOLDER_VALUE = "__select_project_config__";
+
 export default function ProjectBuilder({
   config,
   onBack,
@@ -75,6 +77,7 @@ export default function ProjectBuilder({
   >([]);
   const [failedConfigLabel, setFailedConfigLabel] = useState<string | null>(null);
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
+  const [selectionRequest, setSelectionRequest] = useState(0);
 
   const getNodeKey = (node: BuilderQuestionNode): string =>
     node.kind === "step" ? `step:${node.step.id}` : `group:${node.id}`;
@@ -125,13 +128,14 @@ export default function ProjectBuilder({
     setAvailableConfigs(configs);
     if (configs.length === 1) {
       setSelectedConfigId(configs[0].id);
+      setSelectionRequest((prev) => prev + 1);
     }
   }, []);
 
   useEffect(() => {
     if (!selectedConfigId) return;
     void selectConfig(selectedConfigId);
-  }, [selectedConfigId, selectConfig]);
+  }, [selectedConfigId, selectionRequest, selectConfig]);
 
   useBackKey(() => {
     if (phase === "config-select") {
@@ -173,8 +177,11 @@ export default function ProjectBuilder({
   const currentNode = questionNodes[stepIndex];
 
   const handleConfigSelect = useCallback((id: string) => {
-    setSelectedConfigId((prev) => (prev === id ? prev : id));
-  }, []);
+    if (checkingDependencies) return;
+    if (id === CONFIG_PLACEHOLDER_VALUE) return;
+    setSelectedConfigId(id);
+    setSelectionRequest((prev) => prev + 1);
+  }, [checkingDependencies]);
 
   const handleStepAnswer = (value: string) => {
     if (!currentNode || currentNode.kind !== "step") return;
@@ -340,13 +347,14 @@ export default function ProjectBuilder({
           <Box>
             <Select
               isDisabled={checkingDependencies}
-              defaultValue={
-                selectedConfigId ?? availableConfigs[0]?.id ?? undefined
-              }
-              options={availableConfigs.map((c) => ({
-                label: c.label,
-                value: c.id,
-              }))}
+              defaultValue={CONFIG_PLACEHOLDER_VALUE}
+              options={[
+                { label: "Select a project template...", value: CONFIG_PLACEHOLDER_VALUE },
+                ...availableConfigs.map((c) => ({
+                  label: c.label,
+                  value: c.id,
+                })),
+              ]}
               onChange={handleConfigSelect}
             />
           </Box>
