@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** User config file (~/.tz.json) */
-export const USER_CONFIG_FILENAME = ".tz.json";
+/** User config file (~/tz/config.json) */
+export const USER_CONFIG_FILENAME = "config.json";
 
 /** Project config file (.tzconfig.json) */
 export const TZ_PROJECT_CONFIG_FILENAME = ".tzconfig.json";
@@ -20,7 +20,7 @@ export const PROJECT_BUILDER_CONFIG_FILENAMES = [
 ] as const;
 
 export function getUserConfigPath(): string {
-  return join(homedir(), USER_CONFIG_FILENAME);
+  return join(homedir(), "tz", USER_CONFIG_FILENAME);
 }
 
 export function getUserConfigsDir(): string {

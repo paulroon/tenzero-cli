@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { writeFileSync, existsSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
 import { parseJsonFile } from "@/lib/json";
 import { getUserConfigPath, TZ_PROJECT_CONFIG_FILENAME } from "@/lib/paths";
 
@@ -70,6 +70,7 @@ export function loadConfig(): TzConfig | null {
 }
 
 export function saveConfig(config: TzConfig): void {
+  mkdirSync(dirname(getUserConfigPath()), { recursive: true });
   writeFileSync(
     getUserConfigPath(),
     JSON.stringify(config, null, 2),

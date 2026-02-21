@@ -13,7 +13,7 @@ A terminal UI for managing multiple projects and scaffolding new ones with confi
 - **Interactive TUI** — Navigate with keyboard; choose options, create projects, manage config
 - **Project scaffolding** — Select a template (Symfony, Vanilla PHP, etc.) and answer a few questions
 - **Configurable pipelines** — Each project type defines its own creation steps (run commands, copy files, interpolate templates)
-- **Profile interpolation** — Your name and email from `~/.tz.json` are injected into project configs (e.g. Composer author)
+- **Profile interpolation** — Your name and email from `~/tz/config.json` are injected into project configs (e.g. Composer author)
 - **Conditional steps** — Use `when` conditions so questions and pipeline steps only run when needed
 - **User & custom configs** — Built-in templates in `config/projects/`, extensible via `~/.tz/configs/`
 - **Project tracking** — Projects are tagged with `.tzconfig.json` for quick open and status
@@ -46,7 +46,7 @@ bun run src/cli.tsx
 tz
 ```
 
-**First run:** You’ll be prompted for your name, email, and project directory (default: `~/Projects`). This is stored in `~/.tz.json`.
+**First run:** You’ll be prompted for your name, email, and project directory (default: `~/Projects`). This is stored in `~/tz/config.json`.
 
 ### Main menu
 
@@ -63,7 +63,7 @@ tz
 
 ## Configuration
 
-### User profile (`~/.tz.json`)
+### User profile (`~/tz/config.json`)
 
 ```json
 {
