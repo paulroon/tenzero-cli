@@ -24,7 +24,7 @@ export function getUserConfigPath(): string {
 }
 
 export function getUserConfigsDir(): string {
-  return join(homedir(), ".tz", "configs");
+  return join(homedir(), "tz", "configs");
 }
 
 /** Bundled project configs (config/projects/) */
@@ -34,7 +34,7 @@ export function getBundledProjectsConfigDir(): string {
 
 /**
  * Directories to search for project builder configs, in order.
- * Bundled first, then ~/.tz/configs when present.
+ * Bundled first, then ~/tz/configs when present.
  */
 export function getProjectsConfigDirs(): string[] {
   return [getBundledProjectsConfigDir(), getUserConfigsDir()];

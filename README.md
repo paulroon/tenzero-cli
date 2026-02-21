@@ -15,7 +15,7 @@ A terminal UI for managing multiple projects and scaffolding new ones with confi
 - **Configurable pipelines** — Each project type defines its own creation steps (run commands, copy files, interpolate templates)
 - **Profile interpolation** — Your name and email from `~/tz/config.json` are injected into project configs (e.g. Composer author)
 - **Conditional steps** — Use `when` conditions so questions and pipeline steps only run when needed
-- **User & custom configs** — Built-in templates in `config/projects/`, extensible via `~/.tz/configs/`
+- **User & custom configs** — Built-in templates in `config/projects/`, extensible via `~/tz/configs/`
 - **Project tracking** — Projects are tagged with `.tzconfig.json` for quick open and status
 
 ---
@@ -165,7 +165,7 @@ pipeline:
 2. Add `config.yaml` with `questions` and `pipeline`
 3. Optionally add supporting files (e.g. `composer.json`, `src/`) for the `copy` step
 
-User configs in `~/.tz/configs/` are also scanned and merged with built-in templates.
+User configs in `~/tz/configs/` are also scanned and merged with built-in templates.
 
 ---
 
