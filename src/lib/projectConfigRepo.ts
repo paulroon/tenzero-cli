@@ -7,7 +7,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { getUserConfigsDir } from "@/lib/paths";
+import {
+  getUserConfigsDir,
+  PROJECT_BUILDER_CONFIG_FILENAMES,
+} from "@/lib/paths";
+import { parseConfigFile } from "@/lib/config/parseConfigFile";
 
 const REPO_OWNER = "paulroon";
 const REPO_NAME = "tz-project-configs";
@@ -97,6 +101,24 @@ export function listInstalledProjectConfigs(): string[] {
 
 export function isProjectConfigInstalled(configId: string): boolean {
   return existsSync(getLocalProjectConfigPath(configId));
+}
+
+function resolveInstalledConfigFilePath(configId: string): string | null {
+  const configDir = getLocalProjectConfigPath(configId);
+  for (const filename of PROJECT_BUILDER_CONFIG_FILENAMES) {
+    const candidate = join(configDir, filename);
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function getInstalledProjectConfigVersion(
+  configId: string
+): string | undefined {
+  const configPath = resolveInstalledConfigFilePath(configId);
+  if (!configPath) return undefined;
+  const parsed = parseConfigFile<{ version?: unknown }>(configPath);
+  return typeof parsed?.version === "string" ? parsed.version : undefined;
 }
 
 export function deleteInstalledProjectConfig(configId: string): void {

@@ -4,6 +4,7 @@ import { Alert, Select, Spinner } from "@inkjs/ui";
 import { DEFAULT_EDITOR, type TzConfig } from "@/lib/config";
 import {
   deleteInstalledProjectConfig,
+  getInstalledProjectConfigVersion,
   installProjectConfig,
   listInstalledProjectConfigs,
   listRemoteProjectConfigs,
@@ -20,6 +21,8 @@ const OPTIONS_MENU_ITEMS = [
 type OptionChoice = (typeof OPTIONS_MENU_ITEMS)[number]["value"];
 type ExistingConfigChoice = "update" | "delete" | "cancel";
 const SELECT_PLACEHOLDER = "__select_project_config__";
+const DIM_GRAY = "\u001b[2;90m";
+const ANSI_RESET = "\u001b[0m";
 
 function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   const [phase, setPhase] = useState<
@@ -27,6 +30,9 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   >("loading");
   const [remoteConfigs, setRemoteConfigs] = useState<string[]>([]);
   const [installedConfigs, setInstalledConfigs] = useState<string[]>([]);
+  const [installedVersions, setInstalledVersions] = useState<Record<string, string>>(
+    {}
+  );
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +47,13 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
       ]);
       setRemoteConfigs(remote);
       setInstalledConfigs(installed);
+      setInstalledVersions(
+        Object.fromEntries(
+          installed
+            .map((id) => [id, getInstalledProjectConfigVersion(id)])
+            .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+        )
+      );
       setPhase("select");
     } catch (err) {
       setError(
@@ -69,6 +82,20 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
     [installedConfigs]
   );
 
+  const orderedRemoteConfigs = useMemo(() => {
+    return [...remoteConfigs].sort((a, b) => {
+      const aInstalled = installedSet.has(a);
+      const bInstalled = installedSet.has(b);
+      if (aInstalled !== bInstalled) return aInstalled ? -1 : 1;
+      return a.localeCompare(b);
+    });
+  }, [remoteConfigs, installedSet]);
+
+  const formatInstalledLabel = (configId: string): string => {
+    const version = installedVersions[configId] ?? "?";
+    return `✅ ${configId} ${DIM_GRAY}(v ${version})${ANSI_RESET}`;
+  };
+
   const performInstall = async (configId: string, replace: boolean) => {
     setPhase("working");
     setError(null);
@@ -80,7 +107,15 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
           ? `Updated '${configId}' in ~/tz/configs`
           : `Installed '${configId}' to ~/tz/configs`
       );
-      setInstalledConfigs(listInstalledProjectConfigs());
+      const installed = listInstalledProjectConfigs();
+      setInstalledConfigs(installed);
+      setInstalledVersions(
+        Object.fromEntries(
+          installed
+            .map((id) => [id, getInstalledProjectConfigVersion(id)])
+            .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+        )
+      );
       setPhase("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Install failed");
@@ -108,7 +143,15 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
     if (choice === "delete") {
       try {
         deleteInstalledProjectConfig(selectedConfigId);
-        setInstalledConfigs(listInstalledProjectConfigs());
+        const installed = listInstalledProjectConfigs();
+        setInstalledConfigs(installed);
+        setInstalledVersions(
+          Object.fromEntries(
+            installed
+              .map((id) => [id, getInstalledProjectConfigVersion(id)])
+              .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+          )
+        );
         setStatusMessage(`Deleted '${selectedConfigId}' from ~/tz/configs`);
         setPhase("done");
       } catch (err) {
@@ -233,8 +276,10 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
           defaultValue={SELECT_PLACEHOLDER}
           options={[
             { label: "Select a project config...", value: SELECT_PLACEHOLDER },
-            ...remoteConfigs.map((configId) => ({
-              label: `${installedSet.has(configId) ? "✅" : "  "} ${configId}`,
+            ...orderedRemoteConfigs.map((configId) => ({
+              label: installedSet.has(configId)
+                ? formatInstalledLabel(configId)
+                : `  ${configId}`,
               value: configId,
             })),
           ]}
