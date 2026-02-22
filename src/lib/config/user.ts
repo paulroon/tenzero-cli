@@ -6,6 +6,30 @@ import { getUserConfigPath, TZ_PROJECT_CONFIG_FILENAME } from "@/lib/paths";
 
 export const DEFAULT_EDITOR = "cursor";
 
+export type AwsBackendLockStrategy = "s3-lockfile" | "dynamodb";
+
+export type AwsIntegrationConfig = {
+  connected: boolean;
+  backend?: {
+    bucket: string;
+    region: string;
+    profile: string;
+    statePrefix: string;
+    lockStrategy: AwsBackendLockStrategy;
+  };
+  backendChecks?: {
+    stateReadWritePassed: boolean;
+    lockAcquisitionPassed: boolean;
+    checkedAt: string;
+  };
+};
+
+export type DeploymentsConfig = {
+  enabled: boolean;
+  enabledAt?: string;
+  enabledProfile?: string;
+};
+
 export type TzConfig = {
   name: string;
   email: string;
@@ -15,6 +39,10 @@ export type TzConfig = {
   editor?: string;
   /** Allow shell syntax in run commands without per-run confirmation prompt */
   allowShellSyntax?: boolean;
+  integrations?: {
+    aws?: AwsIntegrationConfig;
+  };
+  deployments?: DeploymentsConfig;
 };
 
 /** Scan project directory for subdirectories that contain .tzconfig; returns directory names (not full paths). */
@@ -63,6 +91,26 @@ export function loadConfig(): TzConfig | null {
       ? parsed.editor.trim()
       : DEFAULT_EDITOR;
   const allowShellSyntax = parsed.allowShellSyntax === true;
+  const integrations =
+    parsed.integrations && typeof parsed.integrations === "object"
+      ? (parsed.integrations as TzConfig["integrations"])
+      : undefined;
+  const deployments =
+    parsed.deployments &&
+    typeof parsed.deployments === "object" &&
+    (parsed.deployments as { enabled?: unknown }).enabled === true
+      ? {
+          enabled: true,
+          enabledAt:
+            typeof (parsed.deployments as { enabledAt?: unknown }).enabledAt === "string"
+              ? ((parsed.deployments as { enabledAt: string }).enabledAt)
+              : undefined,
+          enabledProfile:
+            typeof (parsed.deployments as { enabledProfile?: unknown }).enabledProfile === "string"
+              ? ((parsed.deployments as { enabledProfile: string }).enabledProfile)
+              : undefined,
+        }
+      : { enabled: false };
   return syncProjects({
     name: parsed.name,
     email,
@@ -70,6 +118,8 @@ export function loadConfig(): TzConfig | null {
     projects,
     editor,
     allowShellSyntax,
+    integrations,
+    deployments,
   });
 }
 

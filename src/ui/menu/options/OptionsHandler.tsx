@@ -7,6 +7,7 @@ import {
   syncProjects,
   type TzConfig,
 } from "@/lib/config";
+import { evaluateDeploymentsEnablementGate } from "@/lib/deployments/gate";
 import { getErrorMessage } from "@/lib/errors";
 import {
   deleteInstalledProjectConfig,
@@ -23,6 +24,7 @@ const OPTIONS_MENU_ITEMS = [
   { label: "Config", value: "config" },
   { label: "Secrets", value: "manage-secrets" },
   { label: "App Templates", value: "install-project-config" },
+  { label: "Deployments", value: "deployments" },
 ] as const;
 
 type OptionChoice = (typeof OPTIONS_MENU_ITEMS)[number]["value"];
@@ -473,6 +475,301 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
+function DeploymentsScreen({
+  config,
+  onBack,
+  onConfigUpdate,
+}: {
+  config: TzConfig;
+  onBack: () => void;
+  onConfigUpdate?: (config: TzConfig) => void;
+}) {
+  const [phase, setPhase] = useState<
+    "menu" | "edit-bucket" | "edit-region" | "edit-profile" | "edit-prefix" | "done" | "error"
+  >("menu");
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useBackKey(() => {
+    if (phase !== "menu") {
+      setPhase("menu");
+      return;
+    }
+    onBack();
+  });
+
+  const aws = config.integrations?.aws;
+  const backend = aws?.backend;
+  const gate = evaluateDeploymentsEnablementGate(config);
+
+  const updateConfig = (next: TzConfig) => {
+    const updated = syncProjects(next);
+    saveConfig(updated);
+    onConfigUpdate?.(updated);
+  };
+
+  const ensureBackend = () => ({
+    bucket: backend?.bucket ?? "",
+    region: backend?.region ?? "",
+    profile: backend?.profile ?? "",
+    statePrefix: backend?.statePrefix ?? "",
+    lockStrategy: backend?.lockStrategy ?? "s3-lockfile",
+  } as const);
+
+  const setBackendField = (
+    field: "bucket" | "region" | "profile" | "statePrefix",
+    value: string
+  ) => {
+    const current = ensureBackend();
+    const next: TzConfig = {
+      ...config,
+      integrations: {
+        ...(config.integrations ?? {}),
+        aws: {
+          connected: aws?.connected === true,
+          backend: {
+            ...current,
+            [field]: value.trim(),
+          },
+          backendChecks: aws?.backendChecks,
+        },
+      },
+    };
+    updateConfig(next);
+    setStatusMessage(`Updated backend ${field}.`);
+    setPhase("done");
+  };
+
+  const runValidationChecks = () => {
+    const current = ensureBackend();
+    const hasBackendDetails =
+      current.bucket.length > 0 &&
+      current.region.length > 0 &&
+      current.profile.length > 0 &&
+      current.statePrefix.length > 0;
+
+    const next: TzConfig = {
+      ...config,
+      integrations: {
+        ...(config.integrations ?? {}),
+        aws: {
+          connected: aws?.connected === true,
+          backend: current,
+          backendChecks: {
+            stateReadWritePassed: hasBackendDetails,
+            lockAcquisitionPassed: hasBackendDetails,
+            checkedAt: new Date().toISOString(),
+          },
+        },
+      },
+    };
+    updateConfig(next);
+    if (hasBackendDetails) {
+      setStatusMessage("Backend validation checks passed.");
+      setPhase("done");
+      return;
+    }
+    setErrorMessage("Backend validation failed. Complete all backend config fields and retry.");
+    setPhase("error");
+  };
+
+  const setAwsConnected = (connected: boolean) => {
+    const next: TzConfig = {
+      ...config,
+      integrations: {
+        ...(config.integrations ?? {}),
+        aws: {
+          connected,
+          backend: ensureBackend(),
+          backendChecks: aws?.backendChecks,
+        },
+      },
+    };
+    updateConfig(next);
+    setStatusMessage(connected ? "AWS integration marked connected." : "AWS integration disconnected.");
+    setPhase("done");
+  };
+
+  const enableDeploymentsMode = () => {
+    const latestGate = evaluateDeploymentsEnablementGate(config);
+    if (!latestGate.allowed) {
+      setErrorMessage(latestGate.issues[0]?.message ?? "Deployments mode gate failed.");
+      setPhase("error");
+      return;
+    }
+    const next: TzConfig = {
+      ...config,
+      deployments: {
+        enabled: true,
+        enabledAt: new Date().toISOString(),
+        enabledProfile: backend?.profile ?? "default",
+      },
+    };
+    updateConfig(next);
+    setStatusMessage("Deployments mode enabled.");
+    setPhase("done");
+  };
+
+  if (phase === "edit-bucket") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Deployments</Text>
+        <Text>Set AWS backend bucket:</Text>
+        <TextInput
+          defaultValue={backend?.bucket ?? ""}
+          placeholder="tz-state-123456789012-eu-west-1"
+          onSubmit={(value) => setBackendField("bucket", value)}
+        />
+      </Box>
+    );
+  }
+  if (phase === "edit-region") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Deployments</Text>
+        <Text>Set AWS backend region:</Text>
+        <TextInput
+          defaultValue={backend?.region ?? ""}
+          placeholder="eu-west-1"
+          onSubmit={(value) => setBackendField("region", value)}
+        />
+      </Box>
+    );
+  }
+  if (phase === "edit-profile") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Deployments</Text>
+        <Text>Set AWS backend profile:</Text>
+        <TextInput
+          defaultValue={backend?.profile ?? ""}
+          placeholder="default"
+          onSubmit={(value) => setBackendField("profile", value)}
+        />
+      </Box>
+    );
+  }
+  if (phase === "edit-prefix") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Deployments</Text>
+        <Text>Set backend state prefix:</Text>
+        <TextInput
+          defaultValue={backend?.statePrefix ?? ""}
+          placeholder="tz/v1/default/my-app"
+          onSubmit={(value) => setBackendField("statePrefix", value)}
+        />
+      </Box>
+    );
+  }
+  if (phase === "done") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Deployments</Text>
+        <Alert variant="success" title="Completed">
+          {statusMessage ?? "Done"}
+        </Alert>
+        <Select
+          options={[
+            { label: "Back to deployments", value: "menu" },
+            { label: "Back to options", value: "back" },
+          ]}
+          onChange={(value) => {
+            if (value === "menu") setPhase("menu");
+            else onBack();
+          }}
+        />
+      </Box>
+    );
+  }
+  if (phase === "error") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Deployments</Text>
+        <Alert variant="error" title="Action failed">
+          {errorMessage ?? "Could not complete action."}
+        </Alert>
+        <Select
+          options={[
+            { label: "Back to deployments", value: "menu" },
+            { label: "Back to options", value: "back" },
+          ]}
+          onChange={(value) => {
+            if (value === "menu") setPhase("menu");
+            else onBack();
+          }}
+        />
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Text color="yellow">Deployments</Text>
+      <Text>Deployments mode: {config.deployments?.enabled ? "Enabled" : "Disabled"}</Text>
+      <Text>AWS integration: {aws?.connected ? "Connected" : "Disconnected"}</Text>
+      <Text>
+        Backend: {backend?.bucket ? `${backend.bucket} (${backend.region || "no-region"})` : "Not configured"}
+      </Text>
+      <Text>Gate status: {gate.allowed ? "Ready" : "Blocked"}</Text>
+      {gate.issues.length > 0 && (
+        <Box flexDirection="column">
+          {gate.issues.map((issue) => (
+            <Text key={issue.check} dimColor>
+              - {issue.message}
+            </Text>
+          ))}
+        </Box>
+      )}
+      <Box marginTop={1}>
+        <Select
+          options={[
+            { label: aws?.connected ? "Disconnect AWS integration" : "Connect AWS integration", value: "toggleAws" },
+            { label: "Set backend bucket", value: "bucket" },
+            { label: "Set backend region", value: "region" },
+            { label: "Set backend profile", value: "profile" },
+            { label: "Set backend state prefix", value: "prefix" },
+            { label: "Run backend validation checks", value: "validate" },
+            { label: "Enable deployments mode", value: "enable" },
+            { label: "Back to options", value: "back" },
+          ]}
+          onChange={(value) => {
+            if (value === "toggleAws") {
+              setAwsConnected(!(aws?.connected === true));
+              return;
+            }
+            if (value === "bucket") {
+              setPhase("edit-bucket");
+              return;
+            }
+            if (value === "region") {
+              setPhase("edit-region");
+              return;
+            }
+            if (value === "profile") {
+              setPhase("edit-profile");
+              return;
+            }
+            if (value === "prefix") {
+              setPhase("edit-prefix");
+              return;
+            }
+            if (value === "validate") {
+              runValidationChecks();
+              return;
+            }
+            if (value === "enable") {
+              enableDeploymentsMode();
+              return;
+            }
+            onBack();
+          }}
+        />
+      </Box>
+    </Box>
+  );
+}
+
 type Props = {
   config: TzConfig;
   onBack: () => void;
@@ -522,6 +819,16 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
 
   if (choice === "manage-secrets") {
     return <SecretsScreen onBack={() => setChoice(null)} />;
+  }
+
+  if (choice === "deployments") {
+    return (
+      <DeploymentsScreen
+        config={config}
+        onBack={() => setChoice(null)}
+        onConfigUpdate={onConfigUpdate}
+      />
+    );
   }
 
   return null;
