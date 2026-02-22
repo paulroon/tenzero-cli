@@ -21,7 +21,7 @@ const OPTIONS_MENU_ITEMS = [
 type OptionChoice = (typeof OPTIONS_MENU_ITEMS)[number]["value"];
 type ExistingConfigChoice = "update" | "delete" | "cancel";
 const SELECT_PLACEHOLDER = "__select_project_config__";
-const DIM_GRAY = "\u001b[2;90m";
+const DIM_GRAY = "\u001b[90m";
 const ANSI_RESET = "\u001b[0m";
 
 function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
@@ -102,10 +102,12 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
     setStatusMessage(null);
     try {
       await installProjectConfig(configId, { replace });
+      const installedVersion = getInstalledProjectConfigVersion(configId);
+      const versionText = installedVersion ? ` (v ${installedVersion})` : "";
       setStatusMessage(
         replace
-          ? `Updated '${configId}' in ~/tz/configs`
-          : `Installed '${configId}' to ~/tz/configs`
+          ? `Updated '${configId}'${versionText} in ~/tz/configs`
+          : `Installed '${configId}'${versionText} to ~/tz/configs`
       );
       const installed = listInstalledProjectConfigs();
       setInstalledConfigs(installed);

@@ -28,27 +28,73 @@ function isIgnoredProjectConfigId(configId: string): boolean {
   return configId.startsWith(".");
 }
 
+function withCacheBust(url: string): string {
+  const parsed = new URL(url);
+  parsed.searchParams.set("_tz", Date.now().toString());
+  return parsed.toString();
+}
+
 async function fetchGitHubJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetch(withCacheBust(url), {
     headers: {
       Accept: "application/vnd.github+json",
       "User-Agent": "tz-cli",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
     },
+    cache: "no-store",
   });
   if (!response.ok) {
-    throw new Error(`GitHub API request failed (${response.status})`);
+    const remaining = response.headers.get("x-ratelimit-remaining");
+    const reset = response.headers.get("x-ratelimit-reset");
+    const resetTime = reset
+      ? new Date(Number(reset) * 1000).toLocaleTimeString()
+      : null;
+    const rateLimited = response.status === 403 && remaining === "0";
+    if (rateLimited) {
+      throw new Error(
+        `GitHub API rate limit reached. Try again ${
+          resetTime ? `after ${resetTime}` : "later"
+        }, or set GITHUB_TOKEN to increase the limit.`
+      );
+    }
+
+    if (response.status === 403) {
+      throw new Error(
+        "GitHub API access denied (403). You may be temporarily rate limited. Try again shortly, or set GITHUB_TOKEN."
+      );
+    }
+
+    if (response.status === 404) {
+      throw new Error(
+        "Project config repository or path was not found on GitHub (404)."
+      );
+    }
+
+    throw new Error(`GitHub API request failed (${response.status}).`);
   }
   return (await response.json()) as T;
 }
 
 async function fetchGitHubFile(url: string): Promise<Uint8Array> {
-  const response = await fetch(url, {
+  const response = await fetch(withCacheBust(url), {
     headers: {
       "User-Agent": "tz-cli",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
     },
+    cache: "no-store",
   });
   if (!response.ok) {
-    throw new Error(`Failed downloading file (${response.status})`);
+    if (response.status === 404) {
+      throw new Error("Failed downloading config file: file not found (404).");
+    }
+    if (response.status === 403) {
+      throw new Error(
+        "Failed downloading config file: GitHub denied access (403), likely rate limit."
+      );
+    }
+    throw new Error(`Failed downloading file (${response.status}).`);
   }
   const bytes = await response.arrayBuffer();
   return new Uint8Array(bytes);
