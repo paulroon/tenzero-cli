@@ -6,7 +6,7 @@ import {
 } from "@/lib/paths";
 import type { PipelineStep } from "@/lib/steps/types";
 import { ensureProjectType, type ProjectType } from "./project";
-import { parseConfigFile } from "./parseConfigFile";
+import { parseConfigFile, parseConfigFileResult } from "./parseConfigFile";
 
 type WhenClause = Record<string, string>;
 
@@ -98,6 +98,23 @@ type QuestionDef = {
   required?: boolean;
   trueLabel?: string;
   falseLabel?: string;
+};
+
+type ParsedProjectBuilderConfig = {
+  label?: string;
+  type?: string;
+  version?: string;
+  questions?: QuestionDef[];
+  options?: Record<string, unknown>;
+  ui?: { groups?: unknown[] };
+  dependencies?: unknown[];
+  secretDependencies?: unknown[];
+  pipeline?: unknown[];
+};
+
+export type LoadProjectBuilderConfigResult = {
+  config: ProjectBuilderConfig | null;
+  error?: string;
 };
 
 function isSupportedConfigFile(path: string): boolean {
@@ -345,6 +362,12 @@ function parseSecretDependencies(raw: unknown): SecretRef[] {
 export function loadProjectBuilderConfig(
   idOrPath?: string
 ): ProjectBuilderConfig | null {
+  return loadProjectBuilderConfigWithError(idOrPath).config;
+}
+
+export function loadProjectBuilderConfigWithError(
+  idOrPath?: string
+): LoadProjectBuilderConfigResult {
   let configPath: string | null = null;
   if (idOrPath) {
     if (existsSync(idOrPath) && isSupportedConfigFile(idOrPath)) {
@@ -361,25 +384,34 @@ export function loadProjectBuilderConfig(
     }
   } else {
     const configs = listProjectConfigs();
-    if (configs.length === 0) return null;
+    if (configs.length === 0) {
+      return { config: null, error: "No project config files found." };
+    }
     configPath = configs[0].path;
   }
-  if (!configPath) return null;
+  if (!configPath) {
+    return {
+      config: null,
+      error: idOrPath
+        ? `Project config '${idOrPath}' not found or unsupported extension.`
+        : "Project config path could not be resolved.",
+    };
+  }
 
   const configDir = dirname(configPath);
-  const parsed = parseConfigFile<{
-    label?: string;
-    type?: string;
-    version?: string;
-    questions?: QuestionDef[];
-    options?: Record<string, unknown>;
-    ui?: { groups?: unknown[] };
-    dependencies?: unknown[];
-    secretDependencies?: unknown[];
-    pipeline?: unknown[];
-  }>(configPath);
+  const parsedResult = parseConfigFileResult<ParsedProjectBuilderConfig>(configPath);
+  const parsed = parsedResult.data;
+  if (!parsed) {
+    return {
+      config: null,
+      error: parsedResult.error ?? `Failed to parse config: ${configPath}`,
+    };
+  }
 
-  if (!parsed) return null;
+  const schemaError = validateParsedProjectBuilderConfig(parsed, configPath);
+  if (schemaError) {
+    return { config: null, error: schemaError };
+  }
 
   const steps =
     Array.isArray(parsed.questions) && parsed.questions.length > 0
@@ -397,18 +429,65 @@ export function loadProjectBuilderConfig(
   const id = basename(dirname(configPath));
 
   return {
-    id,
-    label: typeof parsed.label === "string" ? parsed.label : id,
-    type: ensureProjectType(parsed.type),
-    version: typeof parsed.version === "string" ? parsed.version : undefined,
-    steps,
-    questionGroups,
-    dependencies,
-    secretDependencies,
-    pipeline,
-    defaultAnswers: getDefaultAnswers(steps),
-    _configDir: configDir,
+    config: {
+      id,
+      label: typeof parsed.label === "string" ? parsed.label : id,
+      type: ensureProjectType(parsed.type),
+      version: typeof parsed.version === "string" ? parsed.version : undefined,
+      steps,
+      questionGroups,
+      dependencies,
+      secretDependencies,
+      pipeline,
+      defaultAnswers: getDefaultAnswers(steps),
+      _configDir: configDir,
+    },
   };
+}
+
+function validateParsedProjectBuilderConfig(
+  parsed: ParsedProjectBuilderConfig,
+  configPath: string
+): string | null {
+  if (!parsed || typeof parsed !== "object") {
+    return `Invalid config '${configPath}': top-level value must be an object.`;
+  }
+  if (typeof parsed.type !== "string" || parsed.type.trim().length === 0) {
+    return `Invalid config '${configPath}': missing required field 'type' (string).`;
+  }
+  if (!Array.isArray(parsed.pipeline)) {
+    return `Invalid config '${configPath}': missing required field 'pipeline' (array).`;
+  }
+  for (let i = 0; i < parsed.pipeline.length; i++) {
+    const step = parsed.pipeline[i];
+    if (!step || typeof step !== "object") {
+      return `Invalid config '${configPath}': pipeline[${i}] must be an object.`;
+    }
+    if (typeof (step as { type?: unknown }).type !== "string") {
+      return `Invalid config '${configPath}': pipeline[${i}].type must be a string.`;
+    }
+  }
+  if (typeof parsed.questions !== "undefined") {
+    if (!Array.isArray(parsed.questions)) {
+      return `Invalid config '${configPath}': questions must be an array when provided.`;
+    }
+    for (let i = 0; i < parsed.questions.length; i++) {
+      const q = parsed.questions[i];
+      if (!q || typeof q !== "object") {
+        return `Invalid config '${configPath}': questions[${i}] must be an object.`;
+      }
+      if (typeof q.id !== "string" || q.id.trim().length === 0) {
+        return `Invalid config '${configPath}': questions[${i}].id must be a non-empty string.`;
+      }
+      if (typeof q.label !== "string" || q.label.trim().length === 0) {
+        return `Invalid config '${configPath}': questions[${i}].label must be a non-empty string.`;
+      }
+      if (!["string", "text", "select", "boolean"].includes(q.type)) {
+        return `Invalid config '${configPath}': questions[${i}].type must be one of string|text|select|boolean.`;
+      }
+    }
+  }
+  return null;
 }
 
 function getDefaultAnswers(steps: BuilderStep[]): Record<string, string> {
