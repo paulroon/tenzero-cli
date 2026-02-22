@@ -51,6 +51,8 @@ export type DeploymentEnvironmentState = {
   lastPlanAt?: string;
   lastPlanDriftDetected?: boolean;
   lastForceUnlockAt?: string;
+  lastReportedAt?: string;
+  lastStatusUpdatedAt?: string;
   lastStatus?: "healthy" | "drifted" | "deploying" | "failed" | "unknown";
   activeLock?: {
     runId: string;
@@ -268,6 +270,12 @@ function normalizeDeploymentState(raw: unknown): DeploymentState | undefined {
       lastForceUnlockAt:
         typeof candidate.lastForceUnlockAt === "string"
           ? candidate.lastForceUnlockAt
+          : undefined,
+      lastReportedAt:
+        typeof candidate.lastReportedAt === "string" ? candidate.lastReportedAt : undefined,
+      lastStatusUpdatedAt:
+        typeof candidate.lastStatusUpdatedAt === "string"
+          ? candidate.lastStatusUpdatedAt
           : undefined,
       lastStatus:
         candidate.lastStatus === "healthy" ||

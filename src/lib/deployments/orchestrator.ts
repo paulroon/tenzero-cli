@@ -81,6 +81,12 @@ export type DestroyConfirmation = {
   confirmProdPhrase?: string;
 };
 
+export type ReportRefreshOptions = OrchestrationOptions & {
+  intervalMs?: number;
+  maxCycles?: number;
+  onCycle?: (cycle: number, result: ReportResult) => void;
+};
+
 const DEFAULT_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_STALE_LOCK_THRESHOLD_MS = 30 * 60 * 1000;
 const PROD_PLAN_FRESHNESS_WINDOW_MS = 15 * 60 * 1000;
@@ -200,6 +206,22 @@ function ensurePostForceUnlockReplan(state: DeploymentEnvironmentState): void {
   }
 }
 
+function updateEnvironmentStatus(
+  projectPath: string,
+  environmentId: string,
+  nextStatus: EnvironmentStatus,
+  nowIso: string,
+  extra?: Partial<DeploymentEnvironmentState>
+): void {
+  const { configPathState: state, save } = getOrCreateEnvState(projectPath, environmentId);
+  save({
+    ...state,
+    ...extra,
+    lastStatus: nextStatus,
+    lastStatusUpdatedAt: nowIso,
+  });
+}
+
 function expectedDestroyPhrase(environmentId: string): string {
   return `destroy ${environmentId}`;
 }
@@ -258,12 +280,9 @@ export async function runPlan(
   acquireLock(projectPath, environmentId, runId, nowIso, lockTimeoutMs, staleLockThresholdMs);
   try {
     const result = await adapter.plan({ projectPath, environmentId, nowIso });
-    const { configPathState: state, save } = getOrCreateEnvState(projectPath, environmentId);
-    save({
-      ...state,
+    updateEnvironmentStatus(projectPath, environmentId, result.status, nowIso, {
       lastPlanAt: nowIso,
       lastPlanDriftDetected: result.driftDetected,
-      lastStatus: result.status,
       activeLock: undefined,
     });
     recordDeploymentRun(
@@ -329,10 +348,7 @@ export async function runApply(
   acquireLock(projectPath, environmentId, runId, nowIso, lockTimeoutMs, staleLockThresholdMs);
   try {
     const result = await adapter.apply({ projectPath, environmentId, nowIso });
-    const { configPathState: state, save } = getOrCreateEnvState(projectPath, environmentId);
-    save({
-      ...state,
-      lastStatus: result.status,
+    updateEnvironmentStatus(projectPath, environmentId, result.status, nowIso, {
       activeLock: undefined,
     });
     recordDeploymentRun(
@@ -380,11 +396,9 @@ export async function runReport(
   assertDeploymentsModeEnabled(config);
   const nowIso = options?.nowIso ?? new Date().toISOString();
   const result = await adapter.report({ projectPath, environmentId, nowIso });
-  const { configPathState: state, save } = getOrCreateEnvState(projectPath, environmentId);
-  save({
-    ...state,
-    lastStatus: result.status,
+  updateEnvironmentStatus(projectPath, environmentId, result.status, nowIso, {
     lastPlanDriftDetected: result.driftDetected,
+    lastReportedAt: nowIso,
   });
   recordDeploymentRun(
     projectPath,
@@ -422,12 +436,15 @@ export async function runDestroy(
   acquireLock(projectPath, environmentId, runId, nowIso, lockTimeoutMs, staleLockThresholdMs);
   try {
     const result = await adapter.destroy({ projectPath, environmentId, nowIso });
-    const { configPathState: state, save } = getOrCreateEnvState(projectPath, environmentId);
-    save({
-      ...state,
-      lastStatus: result.status === "healthy" ? "unknown" : result.status,
-      activeLock: undefined,
-    });
+    updateEnvironmentStatus(
+      projectPath,
+      environmentId,
+      result.status === "healthy" ? "unknown" : result.status,
+      nowIso,
+      {
+        activeLock: undefined,
+      }
+    );
     recordDeploymentRun(
       projectPath,
       {
@@ -461,4 +478,29 @@ export async function runDestroy(
   } finally {
     releaseLock(projectPath, environmentId);
   }
+}
+
+export async function runReportRefreshLoop(
+  config: TzConfig,
+  projectPath: string,
+  environmentId: string,
+  adapter: DeployAdapter,
+  options?: ReportRefreshOptions
+): Promise<ReportResult[]> {
+  const maxCycles = options?.maxCycles ?? 3;
+  const intervalMs = options?.intervalMs ?? 5000;
+  const results: ReportResult[] = [];
+  for (let cycle = 1; cycle <= maxCycles; cycle++) {
+    const cycleNowIso = options?.nowIso ?? new Date().toISOString();
+    const result = await runReport(config, projectPath, environmentId, adapter, {
+      ...options,
+      nowIso: cycleNowIso,
+    });
+    results.push(result);
+    options?.onCycle?.(cycle, result);
+    if (cycle < maxCycles && intervalMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+  return results;
 }

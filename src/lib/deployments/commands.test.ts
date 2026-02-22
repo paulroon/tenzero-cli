@@ -101,6 +101,10 @@ describe("deployments commands", () => {
       evaluateGate: () => ({ allowed: true, issues: [] }),
       assertMode: () => undefined,
       createAdapter: () => ({} as never),
+      runReport: async () => ({
+        status: "healthy",
+        driftDetected: false,
+      }),
       runApply: async () => ({
         status: "failed",
         summary: { add: 0, change: 0, destroy: 0 },
@@ -110,6 +114,27 @@ describe("deployments commands", () => {
     });
     expect(result.exitCode).toBe(1);
     expect(lines.join("\n")).toContain("[TF_CMD_FAILED] apply failed");
+  });
+
+  test("apply command blocks on preflight drift unless confirmed", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(["deployments", "apply", "--env", "uat"], {
+      loadUserConfig: () => readyConfig(),
+      evaluateGate: () => ({ allowed: true, issues: [] }),
+      assertMode: () => undefined,
+      createAdapter: () => ({} as never),
+      runReport: async () => ({
+        status: "drifted",
+        driftDetected: true,
+      }),
+      runApply: async () => ({
+        status: "healthy",
+        summary: { add: 0, change: 1, destroy: 0 },
+      }),
+      writeLine: (line) => lines.push(line),
+    });
+    expect(result.exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("Pre-apply drift check failed");
   });
 
   test("report command prints remediation hints for drifted", async () => {
@@ -127,5 +152,30 @@ describe("deployments commands", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(lines.join("\n")).toContain("Remediation: review plan and apply explicitly for 'uat'.");
+  });
+
+  test("report watch mode prints cycle updates", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(
+      ["deployments", "report", "--env", "test", "--watch", "--max-cycles", "2", "--interval-seconds", "0"],
+      {
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({ allowed: true, issues: [] }),
+        assertMode: () => undefined,
+        createAdapter: () => ({} as never),
+        runReportRefreshLoop: async (_config, _projectPath, _env, _adapter, options) => {
+          options?.onCycle?.(1, { status: "healthy", driftDetected: false });
+          options?.onCycle?.(2, { status: "drifted", driftDetected: true });
+          return [
+            { status: "healthy", driftDetected: false },
+            { status: "drifted", driftDetected: true },
+          ];
+        },
+        writeLine: (line) => lines.push(line),
+      }
+    );
+    expect(result.exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Refresh cycle 1:");
+    expect(lines.join("\n")).toContain("Refresh cycle 2:");
   });
 });

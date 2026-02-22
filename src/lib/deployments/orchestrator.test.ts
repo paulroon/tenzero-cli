@@ -9,6 +9,7 @@ import {
   runApply,
   runDestroy,
   runPlan,
+  runReportRefreshLoop,
   runReport,
   type DeployAdapter,
 } from "@/lib/deployments/orchestrator";
@@ -183,6 +184,12 @@ describe("deployments orchestrator", () => {
     const cfg = loadProjectConfig(projectPath);
     expect(cfg?.deploymentState?.environments?.test?.lastStatus).toBe("drifted");
     expect(cfg?.deploymentState?.environments?.test?.lastPlanDriftDetected).toBe(true);
+    expect(cfg?.deploymentState?.environments?.test?.lastReportedAt).toBe(
+      "2026-02-01T01:00:00.000Z"
+    );
+    expect(cfg?.deploymentState?.environments?.test?.lastStatusUpdatedAt).toBe(
+      "2026-02-01T01:00:00.000Z"
+    );
   });
 
   test("destroy requires explicit env + phrase confirmations", async () => {
@@ -253,5 +260,29 @@ describe("deployments orchestrator", () => {
 
     const cfg = loadProjectConfig(projectPath);
     expect(cfg?.deploymentState?.environments?.test?.lastStatus).toBe("unknown");
+  });
+
+  test("report refresh loop records multiple cycles", async () => {
+    const root = createProjectRoot();
+    const projectPath = setupProject(root);
+    const config = enabledConfig();
+    let count = 0;
+    const cyclingAdapter: DeployAdapter = {
+      ...stubAdapter,
+      async report() {
+        count += 1;
+        if (count === 1) return { status: "healthy", driftDetected: false };
+        return { status: "drifted", driftDetected: true };
+      },
+    };
+
+    const results = await runReportRefreshLoop(config, projectPath, "test", cyclingAdapter, {
+      maxCycles: 2,
+      intervalMs: 0,
+    });
+    expect(results.length).toBe(2);
+    expect(results[1]?.status).toBe("drifted");
+    const cfg = loadProjectConfig(projectPath);
+    expect(cfg?.deploymentState?.environments?.test?.lastStatus).toBe("drifted");
   });
 });
