@@ -1,12 +1,28 @@
 import { dirname } from "node:path";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { parseJsonFile } from "@/lib/json";
 import { getUserSecretsPath } from "@/lib/paths";
 
 export type SecretMap = Record<string, string>;
+const SECRET_DIR_MODE = 0o700;
+const SECRET_FILE_MODE = 0o600;
+
+function enforceSecretStoragePermissions(path: string): void {
+  if (process.platform === "win32") return;
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true, mode: SECRET_DIR_MODE });
+  chmodSync(dir, SECRET_DIR_MODE);
+  if (existsSync(path)) {
+    chmodSync(path, SECRET_FILE_MODE);
+  }
+}
 
 function loadStoredSecrets(): SecretMap {
-  const parsed = parseJsonFile<Record<string, unknown>>(getUserSecretsPath());
+  const secretsPath = getUserSecretsPath();
+  if (existsSync(secretsPath)) {
+    enforceSecretStoragePermissions(secretsPath);
+  }
+  const parsed = parseJsonFile<Record<string, unknown>>(secretsPath);
   if (!parsed || typeof parsed !== "object") return {};
   const secrets: SecretMap = {};
   for (const [key, value] of Object.entries(parsed)) {
@@ -18,8 +34,13 @@ function loadStoredSecrets(): SecretMap {
 }
 
 function saveStoredSecrets(secrets: SecretMap): void {
-  mkdirSync(dirname(getUserSecretsPath()), { recursive: true });
-  writeFileSync(getUserSecretsPath(), JSON.stringify(secrets, null, 2), "utf-8");
+  const secretsPath = getUserSecretsPath();
+  mkdirSync(dirname(secretsPath), { recursive: true, mode: SECRET_DIR_MODE });
+  writeFileSync(secretsPath, JSON.stringify(secrets, null, 2), {
+    encoding: "utf-8",
+    mode: SECRET_FILE_MODE,
+  });
+  enforceSecretStoragePermissions(secretsPath);
 }
 
 export function normalizeSecretKey(input: string): string | null {
