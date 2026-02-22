@@ -14,12 +14,19 @@ export function ensureProjectType(v: unknown): ProjectType {
   return isValidProjectType(v) ? v : "other";
 }
 
+export type ProjectOpenWith =
+  | {
+      type: "browser";
+      url: string;
+    };
+
 export type TzProjectConfig = {
   name: string;
   path: string;
   type: ProjectType;
   /** Answers from the project builder (projectName, projectType, symfonyAuth, etc.) */
   builderAnswers?: Record<string, string>;
+  openWith?: ProjectOpenWith;
 };
 
 export function loadProjectConfig(path: string): TzProjectConfig | null {
@@ -37,11 +44,24 @@ export function loadProjectConfig(path: string): TzProjectConfig | null {
       ? (config.builderAnswers as Record<string, string>)
       : undefined;
 
+  const openWithCandidate = config.openWith;
+  const openWith =
+    openWithCandidate &&
+    typeof openWithCandidate === "object" &&
+    (openWithCandidate as { type?: unknown }).type === "browser" &&
+    typeof (openWithCandidate as { url?: unknown }).url === "string"
+      ? {
+          type: "browser" as const,
+          url: (openWithCandidate as { url: string }).url,
+        }
+      : undefined;
+
   return {
     name: config.name ?? "unknown",
     path,
     type,
     builderAnswers,
+    openWith,
   };
 }
 

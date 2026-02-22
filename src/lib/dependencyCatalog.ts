@@ -111,6 +111,18 @@ export const DEPENDENCY_CATALOG: Record<string, DependencyCatalogEntry> = {
             "macOS (Homebrew):  brew install --cask docker",
         ],
     },
+    "docker-compose": {
+        id: "docker-compose",
+        name: "docker compose",
+        command: "docker",
+        checkArgs: ["compose", "version"],
+        instructions: [
+            "Install Docker Desktop (includes Docker Compose v2): docs.docker.com/get-started/get-docker/",
+            "",
+            "macOS (Homebrew):  brew install --cask docker",
+            "Alternative (legacy): install docker-compose separately if your setup still uses v1.",
+        ],
+    },
     make: {
         id: "make",
         name: "make",

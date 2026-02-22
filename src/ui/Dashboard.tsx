@@ -8,6 +8,7 @@ import {
   syncProjects,
   saveConfig,
   DEFAULT_EDITOR,
+  type TzProjectConfig,
   type TzConfig,
 } from "@/lib/config";
 import { getMakefileTargets } from "@/lib/makefile";
@@ -15,7 +16,8 @@ import { callShell } from "@/lib/shell";
 import { setResumeProjectPath } from "@/lib/resumeState";
 import { getInkInstance, setInkInstance } from "@/lib/inkInstance";
 import App from "@/ui/App";
-import { rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
 const RED = "\x1b[31m";
 const RESET = "\x1b[0m";
@@ -34,6 +36,53 @@ type Props = {
 
 function isDockerizedValue(value: unknown): boolean {
   return value === "yes" || value === "true";
+}
+
+function detectHostPortFromCompose(projectPath: string): string | null {
+  const composePath = join(projectPath, "docker-compose.yml");
+  if (!existsSync(composePath)) return null;
+  try {
+    const content = readFileSync(composePath, "utf-8");
+    const lines = content.split(/\r?\n/);
+    for (const line of lines) {
+      const match = line.match(/^\s*-\s*["']?(\d+):(\d+)(?:\/tcp|\/udp)?["']?\s*$/);
+      if (match?.[1]) return match[1];
+    }
+  } catch {
+    // Ignore parse/read issues and fall back.
+  }
+  return null;
+}
+
+function detectPortFromEnvLocal(projectPath: string): string | null {
+  const envPath = join(projectPath, ".env.local");
+  if (!existsSync(envPath)) return null;
+  try {
+    const content = readFileSync(envPath, "utf-8");
+    const match = content.match(/^\s*PORT\s*=\s*(\d+)\s*$/m);
+    if (match?.[1]) return match[1];
+  } catch {
+    // Ignore parse/read issues and fall back.
+  }
+  return null;
+}
+
+function getProjectOpenUrl(projectPath: string, projectType: string): string {
+  const composePort = detectHostPortFromCompose(projectPath);
+  if (composePort) return `http://localhost:${composePort}`;
+
+  const envPort = detectPortFromEnvLocal(projectPath);
+  if (envPort) return `http://localhost:${envPort}`;
+
+  const fallbackPort = projectType === "nextjs" ? "3000" : "8000";
+  return `http://localhost:${fallbackPort}`;
+}
+
+function resolveOpenUrl(project: TzProjectConfig): string {
+  if (project.openWith?.type === "browser" && project.openWith.url) {
+    return project.openWith.url;
+  }
+  return getProjectOpenUrl(project.path, project.type);
 }
 
 export default function Dashboard({
@@ -74,9 +123,9 @@ export default function Dashboard({
         input.toLowerCase() === "o" &&
         !key.ctrl &&
         !key.meta &&
-        isDockerized
+        (isDockerized || currentProject.openWith?.type === "browser")
       ) {
-        const url = "http://localhost:8000";
+        const url = resolveOpenUrl(currentProject);
         const cmd =
           process.platform === "win32"
             ? ["cmd", "/c", "start", url]
