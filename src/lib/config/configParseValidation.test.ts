@@ -158,4 +158,179 @@ describe("project config validation", () => {
     expect(result.config).toBeNull();
     expect(result.error).toContain("Conflicting 'when' clause");
   });
+
+  test("valid infra block parses successfully", () => {
+    const root = createTmpRoot();
+    const path = join(root, "config.yaml");
+    writeFileSync(
+      path,
+      [
+        "type: demo",
+        "pipeline:",
+        "  - type: createProjectDirectory",
+        "infra:",
+        "  version: \"1\"",
+        "  environments:",
+        "    - id: test",
+        "      label: Test",
+        "      capabilities:",
+        "        - appRuntime",
+        "        - postgres",
+        "      constraints: {}",
+        "      outputs:",
+        "        - key: DATABASE_URL",
+        "          type: secret_ref",
+        "          sensitive: true",
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const result = loadProjectBuilderConfigWithError(path);
+    expect(result.error).toBeUndefined();
+    expect(result.config?.infra?.version).toBe("1");
+    expect(result.config?.infra?.environments.length).toBe(1);
+  });
+
+  test("unsupported infra.version fails predictably", () => {
+    const root = createTmpRoot();
+    const path = join(root, "config.yaml");
+    writeFileSync(
+      path,
+      [
+        "type: demo",
+        "pipeline:",
+        "  - type: createProjectDirectory",
+        "infra:",
+        "  version: \"2\"",
+        "  environments:",
+        "    - id: test",
+        "      label: Test",
+        "      capabilities: [appRuntime]",
+        "      constraints: {}",
+        "      outputs: []",
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const result = loadProjectBuilderConfigWithError(path);
+    expect(result.config).toBeNull();
+    expect(result.error).toContain("unsupported infra.version");
+  });
+
+  test("duplicate infra environment id fails predictably", () => {
+    const root = createTmpRoot();
+    const path = join(root, "config.yaml");
+    writeFileSync(
+      path,
+      [
+        "type: demo",
+        "pipeline:",
+        "  - type: createProjectDirectory",
+        "infra:",
+        "  version: \"1\"",
+        "  environments:",
+        "    - id: test",
+        "      label: Test 1",
+        "      capabilities: [appRuntime]",
+        "      constraints: {}",
+        "      outputs: []",
+        "    - id: test",
+        "      label: Test 2",
+        "      capabilities: [appRuntime]",
+        "      constraints: {}",
+        "      outputs: []",
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const result = loadProjectBuilderConfigWithError(path);
+    expect(result.config).toBeNull();
+    expect(result.error).toContain("duplicate infra environment id");
+  });
+
+  test("invalid infra environment id format fails predictably", () => {
+    const root = createTmpRoot();
+    const path = join(root, "config.yaml");
+    writeFileSync(
+      path,
+      [
+        "type: demo",
+        "pipeline:",
+        "  - type: createProjectDirectory",
+        "infra:",
+        "  version: \"1\"",
+        "  environments:",
+        "    - id: Prod",
+        "      label: Production",
+        "      capabilities: [appRuntime]",
+        "      constraints: {}",
+        "      outputs: []",
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const result = loadProjectBuilderConfigWithError(path);
+    expect(result.config).toBeNull();
+    expect(result.error).toContain(".id must match");
+  });
+
+  test("invalid infra capability fails predictably", () => {
+    const root = createTmpRoot();
+    const path = join(root, "config.yaml");
+    writeFileSync(
+      path,
+      [
+        "type: demo",
+        "pipeline:",
+        "  - type: createProjectDirectory",
+        "infra:",
+        "  version: \"1\"",
+        "  environments:",
+        "    - id: test",
+        "      label: Test",
+        "      capabilities: [kubernetes]",
+        "      constraints: {}",
+        "      outputs: []",
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const result = loadProjectBuilderConfigWithError(path);
+    expect(result.config).toBeNull();
+    expect(result.error).toContain("capabilities[0] must be one of");
+  });
+
+  test("invalid infra output type fails predictably", () => {
+    const root = createTmpRoot();
+    const path = join(root, "config.yaml");
+    writeFileSync(
+      path,
+      [
+        "type: demo",
+        "pipeline:",
+        "  - type: createProjectDirectory",
+        "infra:",
+        "  version: \"1\"",
+        "  environments:",
+        "    - id: test",
+        "      label: Test",
+        "      capabilities: [appRuntime]",
+        "      constraints: {}",
+        "      outputs:",
+        "        - key: APP_BASE_URL",
+        "          type: uri",
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const result = loadProjectBuilderConfigWithError(path);
+    expect(result.config).toBeNull();
+    expect(result.error).toContain("outputs[0].type must be one of");
+  });
 });

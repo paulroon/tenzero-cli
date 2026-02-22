@@ -67,6 +67,7 @@ export type ProjectBuilderConfig = {
   dependencies: DependencyRef[];
   secretDependencies: SecretRef[];
   pipeline: PipelineStep[];
+  infra?: InfraConfig;
   defaultAnswers: Record<string, string>;
   _configDir: string;
 };
@@ -104,6 +105,7 @@ type ParsedProjectBuilderConfig = {
   label?: string;
   type?: string;
   version?: string;
+  infra?: unknown;
   questions?: QuestionDef[];
   options?: Record<string, unknown>;
   ui?: { groups?: unknown[] };
@@ -116,6 +118,43 @@ type ParsedProjectBuilderConfig = {
 export type LoadProjectBuilderConfigResult = {
   config: ProjectBuilderConfig | null;
   error?: string;
+};
+
+const SUPPORTED_INFRA_SCHEMA_MAJORS = ["1"] as const;
+const INFRA_ENV_ID_PATTERN = /^[a-z][a-z0-9-]{1,31}$/;
+const ALLOWED_INFRA_CAPABILITIES = ["appRuntime", "postgres", "envConfig", "dns"] as const;
+const ALLOWED_INFRA_OUTPUT_TYPES = [
+  "string",
+  "number",
+  "boolean",
+  "json",
+  "secret_ref",
+] as const;
+
+type InfraOutputType = (typeof ALLOWED_INFRA_OUTPUT_TYPES)[number];
+type InfraCapability = (typeof ALLOWED_INFRA_CAPABILITIES)[number];
+
+export type InfraOutputSpec = {
+  key: string;
+  type: InfraOutputType;
+  sensitive?: boolean;
+  rotatable?: boolean;
+  required?: boolean;
+  description?: string;
+  default?: unknown;
+};
+
+export type InfraEnvironmentSpec = {
+  id: string;
+  label: string;
+  capabilities: InfraCapability[];
+  constraints: Record<string, unknown>;
+  outputs: InfraOutputSpec[];
+};
+
+export type InfraConfig = {
+  version: string;
+  environments: InfraEnvironmentSpec[];
 };
 
 function isSupportedConfigFile(path: string): boolean {
@@ -447,6 +486,206 @@ function parseSecretDependencies(raw: unknown): SecretRef[] {
   return deps;
 }
 
+function parseInfra(raw: unknown, configPath: string): { infra?: InfraConfig; error?: string } {
+  if (typeof raw === "undefined") return {};
+  if (!raw || typeof raw !== "object") {
+    return {
+      error: `Invalid config '${configPath}': infra must be an object when provided.`,
+    };
+  }
+
+  const infra = raw as {
+    version?: unknown;
+    environments?: unknown;
+  };
+
+  if (typeof infra.version !== "string" || infra.version.trim().length === 0) {
+    return {
+      error: `Invalid config '${configPath}': infra.version must be a non-empty string.`,
+    };
+  }
+  if (
+    !SUPPORTED_INFRA_SCHEMA_MAJORS.includes(
+      infra.version as (typeof SUPPORTED_INFRA_SCHEMA_MAJORS)[number]
+    )
+  ) {
+    return {
+      error: `Invalid config '${configPath}': unsupported infra.version '${infra.version}'. Supported versions: ${SUPPORTED_INFRA_SCHEMA_MAJORS.join(
+        ", "
+      )}.`,
+    };
+  }
+
+  if (!Array.isArray(infra.environments) || infra.environments.length === 0) {
+    return {
+      error: `Invalid config '${configPath}': infra.environments must be a non-empty array.`,
+    };
+  }
+
+  const parsedEnvironments: InfraEnvironmentSpec[] = [];
+  const seenIds = new Set<string>();
+  for (let i = 0; i < infra.environments.length; i++) {
+    const item = infra.environments[i];
+    if (!item || typeof item !== "object") {
+      return {
+        error: `Invalid config '${configPath}': infra.environments[${i}] must be an object.`,
+      };
+    }
+    const env = item as {
+      id?: unknown;
+      label?: unknown;
+      capabilities?: unknown;
+      constraints?: unknown;
+      outputs?: unknown;
+    };
+
+    if (typeof env.id !== "string" || !INFRA_ENV_ID_PATTERN.test(env.id)) {
+      return {
+        error: `Invalid config '${configPath}': infra.environments[${i}].id must match ${INFRA_ENV_ID_PATTERN.toString()}.`,
+      };
+    }
+    if (seenIds.has(env.id)) {
+      return {
+        error: `Invalid config '${configPath}': duplicate infra environment id '${env.id}'.`,
+      };
+    }
+    seenIds.add(env.id);
+
+    if (typeof env.label !== "string" || env.label.trim().length === 0) {
+      return {
+        error: `Invalid config '${configPath}': infra.environments[${i}].label must be a non-empty string.`,
+      };
+    }
+
+    if (!Array.isArray(env.capabilities) || env.capabilities.length === 0) {
+      return {
+        error: `Invalid config '${configPath}': infra.environments[${i}].capabilities must be a non-empty array.`,
+      };
+    }
+    const capabilities: InfraCapability[] = [];
+    for (let c = 0; c < env.capabilities.length; c++) {
+      const capability = env.capabilities[c];
+      if (
+        typeof capability !== "string" ||
+        !ALLOWED_INFRA_CAPABILITIES.includes(capability as InfraCapability)
+      ) {
+        return {
+          error: `Invalid config '${configPath}': infra.environments[${i}].capabilities[${c}] must be one of ${ALLOWED_INFRA_CAPABILITIES.join(
+            "|"
+          )}.`,
+        };
+      }
+      capabilities.push(capability as InfraCapability);
+    }
+
+    if (
+      !env.constraints ||
+      typeof env.constraints !== "object" ||
+      Array.isArray(env.constraints)
+    ) {
+      return {
+        error: `Invalid config '${configPath}': infra.environments[${i}].constraints must be an object.`,
+      };
+    }
+
+    if (!Array.isArray(env.outputs)) {
+      return {
+        error: `Invalid config '${configPath}': infra.environments[${i}].outputs must be an array.`,
+      };
+    }
+
+    const outputs: InfraOutputSpec[] = [];
+    const outputKeys = new Set<string>();
+    for (let o = 0; o < env.outputs.length; o++) {
+      const output = env.outputs[o];
+      if (!output || typeof output !== "object") {
+        return {
+          error: `Invalid config '${configPath}': infra.environments[${i}].outputs[${o}] must be an object.`,
+        };
+      }
+      const candidate = output as {
+        key?: unknown;
+        type?: unknown;
+        sensitive?: unknown;
+        rotatable?: unknown;
+        required?: unknown;
+        description?: unknown;
+        default?: unknown;
+      };
+      if (typeof candidate.key !== "string" || candidate.key.trim().length === 0) {
+        return {
+          error: `Invalid config '${configPath}': infra.environments[${i}].outputs[${o}].key must be a non-empty string.`,
+        };
+      }
+      if (outputKeys.has(candidate.key)) {
+        return {
+          error: `Invalid config '${configPath}': duplicate output key '${candidate.key}' in infra.environments[${i}].outputs.`,
+        };
+      }
+      outputKeys.add(candidate.key);
+
+      if (
+        typeof candidate.type !== "string" ||
+        !ALLOWED_INFRA_OUTPUT_TYPES.includes(candidate.type as InfraOutputType)
+      ) {
+        return {
+          error: `Invalid config '${configPath}': infra.environments[${i}].outputs[${o}].type must be one of ${ALLOWED_INFRA_OUTPUT_TYPES.join(
+            "|"
+          )}.`,
+        };
+      }
+      if (typeof candidate.sensitive !== "undefined" && typeof candidate.sensitive !== "boolean") {
+        return {
+          error: `Invalid config '${configPath}': infra.environments[${i}].outputs[${o}].sensitive must be boolean when provided.`,
+        };
+      }
+      if (typeof candidate.rotatable !== "undefined" && typeof candidate.rotatable !== "boolean") {
+        return {
+          error: `Invalid config '${configPath}': infra.environments[${i}].outputs[${o}].rotatable must be boolean when provided.`,
+        };
+      }
+      if (typeof candidate.required !== "undefined" && typeof candidate.required !== "boolean") {
+        return {
+          error: `Invalid config '${configPath}': infra.environments[${i}].outputs[${o}].required must be boolean when provided.`,
+        };
+      }
+      if (
+        typeof candidate.description !== "undefined" &&
+        typeof candidate.description !== "string"
+      ) {
+        return {
+          error: `Invalid config '${configPath}': infra.environments[${i}].outputs[${o}].description must be string when provided.`,
+        };
+      }
+
+      outputs.push({
+        key: candidate.key,
+        type: candidate.type as InfraOutputType,
+        sensitive: candidate.sensitive as boolean | undefined,
+        rotatable: candidate.rotatable as boolean | undefined,
+        required: candidate.required as boolean | undefined,
+        description: candidate.description as string | undefined,
+        default: candidate.default,
+      });
+    }
+
+    parsedEnvironments.push({
+      id: env.id,
+      label: env.label,
+      capabilities,
+      constraints: env.constraints as Record<string, unknown>,
+      outputs,
+    });
+  }
+
+  return {
+    infra: {
+      version: infra.version,
+      environments: parsedEnvironments,
+    },
+  };
+}
+
 export function loadProjectBuilderConfig(
   idOrPath?: string
 ): ProjectBuilderConfig | null {
@@ -500,6 +739,10 @@ export function loadProjectBuilderConfigWithError(
   if (schemaError) {
     return { config: null, error: schemaError };
   }
+  const infraResult = parseInfra(parsed.infra, configPath);
+  if (infraResult.error) {
+    return { config: null, error: infraResult.error };
+  }
 
   const steps =
     Array.isArray(parsed.questions) && parsed.questions.length > 0
@@ -535,6 +778,7 @@ export function loadProjectBuilderConfigWithError(
       dependencies,
       secretDependencies,
       pipeline,
+      infra: infraResult.infra,
       defaultAnswers: getDefaultAnswers(steps),
       _configDir: configDir,
     },

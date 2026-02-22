@@ -15,4 +15,7 @@ export type {
   QuestionGroup,
   DependencyRef,
   SecretRef,
+  InfraConfig,
+  InfraEnvironmentSpec,
+  InfraOutputSpec,
 } from "./projectBuilder";
