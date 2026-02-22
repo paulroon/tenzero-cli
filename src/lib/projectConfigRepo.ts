@@ -24,6 +24,10 @@ type GitHubContentEntry = {
   download_url: string | null;
 };
 
+function isIgnoredProjectConfigId(configId: string): boolean {
+  return configId.startsWith(".");
+}
+
 async function fetchGitHubJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
     headers: {
@@ -93,8 +97,13 @@ export function listInstalledProjectConfigs(): string[] {
   if (!existsSync(configsDir)) return [];
   return readdirSync(configsDir)
     .filter((name) => {
+      if (isIgnoredProjectConfigId(name)) return false;
       const path = join(configsDir, name);
-      return existsSync(path) && statSync(path).isDirectory();
+      return (
+        existsSync(path) &&
+        statSync(path).isDirectory() &&
+        resolveInstalledConfigFilePath(name) !== null
+      );
     })
     .sort((a, b) => a.localeCompare(b));
 }
@@ -132,7 +141,9 @@ export async function listRemoteProjectConfigs(): Promise<string[]> {
     `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents?ref=${REPO_BRANCH}`
   );
   return root
-    .filter((entry) => entry.type === "dir")
+    .filter(
+      (entry) => entry.type === "dir" && !isIgnoredProjectConfigId(entry.name)
+    )
     .map((entry) => entry.name)
     .sort((a, b) => a.localeCompare(b));
 }
@@ -141,6 +152,10 @@ export async function installProjectConfig(
   configId: string,
   options?: { replace?: boolean }
 ): Promise<void> {
+  if (isIgnoredProjectConfigId(configId)) {
+    throw new Error(`Invalid project config id: ${configId}`);
+  }
+
   const replace = options?.replace === true;
   const configsDir = getLocalProjectConfigsDir();
   const destination = getLocalProjectConfigPath(configId);
