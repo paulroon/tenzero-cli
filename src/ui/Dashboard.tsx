@@ -16,6 +16,7 @@ import { callShell } from "@/lib/shell";
 import { setResumeProjectPath } from "@/lib/resumeState";
 import { getInkInstance, setInkInstance } from "@/lib/inkInstance";
 import { getErrorMessage } from "@/lib/errors";
+import { evaluateProjectDeleteGuard } from "@/lib/deployments/deleteGuard";
 import App from "@/ui/App";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -188,6 +189,19 @@ export default function Dashboard({
 
   const handleDeleteConfirm = async () => {
     try {
+      const deleteGuard = evaluateProjectDeleteGuard(currentProject.path);
+      if (!deleteGuard.allowed) {
+        const details = deleteGuard.blocks
+          .map(
+            (block) =>
+              `${block.environmentId}: ${block.reason}. Run '${block.remediationCommand}'.`
+          )
+          .join("\n");
+        throw new Error(
+          `Cannot delete local app while provider-backed environments still exist.\n${details}`
+        );
+      }
+
       const isDockerized = isDockerizedValue(currentProject.builderAnswers?.dockerize);
 
       const stopDockerIfPossible = async () => {
