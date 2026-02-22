@@ -4,6 +4,7 @@ import type { ProjectBuilderAnswers, PipelineStep, Profile, StepContext } from "
 import { stepRegistry } from "@/lib/steps/registry";
 import { getApplicablePipelineSteps } from "@/lib/config/projectBuilder";
 import type { ProjectType } from "@/lib/config/project";
+import { getSecretsForInterpolation } from "@/lib/secrets";
 import { getStepLabel } from "./projectGenerator/stepLabels";
 
 export type { ProjectBuilderAnswers, Profile } from "@/lib/steps/types";
@@ -49,6 +50,7 @@ export async function generateProject(
     projectName,
     answers,
     profile: options.profile,
+    secrets: getSecretsForInterpolation(),
     configDir: options.configDir,
   };
 

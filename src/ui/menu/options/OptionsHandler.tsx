@@ -6,15 +6,18 @@ import {
   deleteInstalledProjectConfig,
   getInstalledProjectConfigVersion,
   installProjectConfig,
+  isProjectConfigInstalled,
   listInstalledProjectConfigs,
   listRemoteProjectConfigs,
 } from "@/lib/projectConfigRepo";
 import { useBackKey } from "@/hooks/useBackKey";
 import ConfigSetup from "@/ui/ConfigSetup";
+import SecretsScreen from "@/ui/menu/options/SecretsScreen";
 
 const OPTIONS_MENU_ITEMS = [
   { label: "View Config", value: "view-config" },
   { label: "Edit Config", value: "edit-config" },
+  { label: "Manage secrets", value: "manage-secrets" },
   { label: "Install project config", value: "install-project-config" },
 ] as const;
 
@@ -120,6 +123,14 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
       );
       setPhase("done");
     } catch (err) {
+      if (
+        err instanceof Error &&
+        err.message.startsWith("Config already installed:")
+      ) {
+        setSelectedConfigId(configId);
+        setPhase("existing-choice");
+        return;
+      }
       setError(err instanceof Error ? err.message : "Install failed");
       setPhase("error");
     }
@@ -128,7 +139,7 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   const handleConfigSelect = (value: string) => {
     if (value === SELECT_PLACEHOLDER) return;
     setSelectedConfigId(value);
-    if (installedSet.has(value)) {
+    if (installedSet.has(value) || isProjectConfigInstalled(value)) {
       setPhase("existing-choice");
       return;
     }
@@ -365,6 +376,10 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
 
   if (choice === "install-project-config") {
     return <InstallProjectConfigScreen onBack={() => setChoice(null)} />;
+  }
+
+  if (choice === "manage-secrets") {
+    return <SecretsScreen onBack={() => setChoice(null)} />;
   }
 
   return null;

@@ -48,6 +48,11 @@ export type DependencyRef = {
   when?: WhenClause;
 };
 
+export type SecretRef = {
+  id: string;
+  when?: WhenClause;
+};
+
 export type BuilderQuestionNode =
   | { kind: "step"; step: BuilderStep }
   | { kind: "boolean-group"; id: string; label: string; steps: BuilderBooleanStep[] };
@@ -60,6 +65,7 @@ export type ProjectBuilderConfig = {
   steps: BuilderStep[];
   questionGroups: QuestionGroup[];
   dependencies: DependencyRef[];
+  secretDependencies: SecretRef[];
   pipeline: PipelineStep[];
   defaultAnswers: Record<string, string>;
   _configDir: string;
@@ -314,6 +320,28 @@ function parseDependencies(raw: unknown): DependencyRef[] {
   return deps;
 }
 
+function parseSecretDependencies(raw: unknown): SecretRef[] {
+  if (!Array.isArray(raw)) return [];
+  const deps: SecretRef[] = [];
+  for (const dep of raw) {
+    if (typeof dep === "string") {
+      deps.push({ id: dep });
+      continue;
+    }
+    if (!dep || typeof dep !== "object") continue;
+    const candidate = dep as { id?: unknown; when?: unknown };
+    if (typeof candidate.id !== "string") continue;
+    deps.push({
+      id: candidate.id,
+      when:
+        candidate.when && typeof candidate.when === "object"
+          ? (candidate.when as WhenClause)
+          : undefined,
+    });
+  }
+  return deps;
+}
+
 export function loadProjectBuilderConfig(
   idOrPath?: string
 ): ProjectBuilderConfig | null {
@@ -347,6 +375,7 @@ export function loadProjectBuilderConfig(
     options?: Record<string, unknown>;
     ui?: { groups?: unknown[] };
     dependencies?: unknown[];
+    secretDependencies?: unknown[];
     pipeline?: unknown[];
   }>(configPath);
 
@@ -362,6 +391,7 @@ export function loadProjectBuilderConfig(
         );
   const questionGroups = parseQuestionGroups(parsed.ui);
   const dependencies = parseDependencies(parsed.dependencies);
+  const secretDependencies = parseSecretDependencies(parsed.secretDependencies);
   const pipeline = parsePipeline(parsed.pipeline);
 
   const id = basename(dirname(configPath));
@@ -374,6 +404,7 @@ export function loadProjectBuilderConfig(
     steps,
     questionGroups,
     dependencies,
+    secretDependencies,
     pipeline,
     defaultAnswers: getDefaultAnswers(steps),
     _configDir: configDir,

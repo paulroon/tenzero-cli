@@ -12,6 +12,7 @@ import {
   PROJECT_BUILDER_CONFIG_FILENAMES,
 } from "@/lib/paths";
 import { parseConfigFile } from "@/lib/config/parseConfigFile";
+import { getSecretValue } from "@/lib/secrets";
 
 const REPO_OWNER = "paulroon";
 const REPO_NAME = "tz-project-configs";
@@ -34,14 +35,23 @@ function withCacheBust(url: string): string {
   return parsed.toString();
 }
 
+function githubHeaders(base?: Record<string, string>): Record<string, string> {
+  const token = getSecretValue("GITHUB_TOKEN");
+  if (!token) return { ...(base ?? {}) };
+  return {
+    ...(base ?? {}),
+    Authorization: `Bearer ${token}`,
+  };
+}
+
 async function fetchGitHubJson<T>(url: string): Promise<T> {
   const response = await fetch(withCacheBust(url), {
-    headers: {
+    headers: githubHeaders({
       Accept: "application/vnd.github+json",
       "User-Agent": "tz-cli",
       "Cache-Control": "no-cache",
       Pragma: "no-cache",
-    },
+    }),
     cache: "no-store",
   });
   if (!response.ok) {
@@ -56,6 +66,12 @@ async function fetchGitHubJson<T>(url: string): Promise<T> {
         `GitHub API rate limit reached. Try again ${
           resetTime ? `after ${resetTime}` : "later"
         }, or set GITHUB_TOKEN to increase the limit.`
+      );
+    }
+
+    if (response.status === 401) {
+      throw new Error(
+        "GitHub authentication failed (401). Your GITHUB_TOKEN is missing, invalid, or expired. Update it in Options -> Manage secrets, or unset env var GITHUB_TOKEN/TZ_SECRET_GITHUB_TOKEN if it is wrong."
       );
     }
 
@@ -78,14 +94,19 @@ async function fetchGitHubJson<T>(url: string): Promise<T> {
 
 async function fetchGitHubFile(url: string): Promise<Uint8Array> {
   const response = await fetch(withCacheBust(url), {
-    headers: {
+    headers: githubHeaders({
       "User-Agent": "tz-cli",
       "Cache-Control": "no-cache",
       Pragma: "no-cache",
-    },
+    }),
     cache: "no-store",
   });
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error(
+        "Failed downloading config file: GitHub authentication failed (401). Check GITHUB_TOKEN in Manage secrets or env vars."
+      );
+    }
     if (response.status === 404) {
       throw new Error("Failed downloading config file: file not found (404).");
     }

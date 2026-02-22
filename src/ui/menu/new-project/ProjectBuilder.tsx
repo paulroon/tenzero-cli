@@ -25,7 +25,10 @@ import { useBackKey } from "@/hooks/useBackKey";
 import { generateProject } from "@/lib/projectGenerator";
 import { getStepLabel } from "@/lib/projectGenerator/stepLabels";
 import { GenerationError } from "@/lib/projectGenerator/GenerationError";
-import { getProjectDependencyStatus } from "@/lib/dependencies";
+import {
+  getProjectDependencyStatus,
+  getProjectSecretStatus,
+} from "@/lib/dependencies";
 import GenerationOutput, {
   type GenerationStep,
 } from "@/ui/components/GenerationOutput";
@@ -97,10 +100,14 @@ export default function ProjectBuilder({
     setFailedConfigLabel(null);
 
     try {
-      const statuses = await getProjectDependencyStatus(
-        loaded.dependencies,
-        loaded.defaultAnswers ?? {}
-      );
+      const [dependencyStatuses, secretStatuses] = await Promise.all([
+        getProjectDependencyStatus(loaded.dependencies, loaded.defaultAnswers ?? {}),
+        getProjectSecretStatus(
+          loaded.secretDependencies ?? [],
+          loaded.defaultAnswers ?? {}
+        ),
+      ]);
+      const statuses = [...dependencyStatuses, ...secretStatuses];
       const missing = statuses.filter((d) => !d.installed);
       if (missing.length > 0) {
         setFailedDeps(
@@ -324,15 +331,15 @@ export default function ProjectBuilder({
         <Text>Select project type:</Text>
         {checkingDependencies && (
           <Box marginTop={1}>
-            <Spinner label="Checking template dependencies" />
+            <Spinner label="Checking template requirements" />
           </Box>
         )}
         {failedDeps.length > 0 && (
           <Box flexDirection="column" marginTop={1} gap={1}>
-            <Alert variant="error" title="Missing dependencies">
+            <Alert variant="error" title="Missing requirements">
               {failedConfigLabel
-                ? `${failedConfigLabel} requires missing dependencies.`
-                : "Selected template requires missing dependencies."}
+                ? `${failedConfigLabel} is missing required dependencies/secrets.`
+                : "Selected template is missing required dependencies/secrets."}
             </Alert>
             {failedDeps.map((dep) => (
               <Box key={dep.name} flexDirection="column" gap={0}>

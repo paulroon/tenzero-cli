@@ -6,6 +6,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** User config file (~/tz/config.json) */
 export const USER_CONFIG_FILENAME = "config.json";
+/** User secrets file (~/tz/secrets.json) */
+export const USER_SECRETS_FILENAME = "secrets.json";
 
 /** Project config file (.tzconfig.json) */
 export const TZ_PROJECT_CONFIG_FILENAME = ".tzconfig.json";
@@ -21,6 +23,10 @@ export const PROJECT_BUILDER_CONFIG_FILENAMES = [
 
 export function getUserConfigPath(): string {
   return join(homedir(), "tz", USER_CONFIG_FILENAME);
+}
+
+export function getUserSecretsPath(): string {
+  return join(homedir(), "tz", USER_SECRETS_FILENAME);
 }
 
 export function getUserConfigsDir(): string {

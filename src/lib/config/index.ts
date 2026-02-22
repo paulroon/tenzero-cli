@@ -14,4 +14,5 @@ export type {
   BuilderQuestionNode,
   QuestionGroup,
   DependencyRef,
+  SecretRef,
 } from "./projectBuilder";

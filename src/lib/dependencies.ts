@@ -1,6 +1,7 @@
 import { callShell } from "./shell";
 import { DEPENDENCY_CATALOG } from "./dependencyCatalog";
-import type { DependencyRef } from "./config/projectBuilder";
+import type { DependencyRef, SecretRef } from "./config/projectBuilder";
+import { isSecretAvailable } from "./secrets";
 
 /** Check if a command exists by running it with optional args (exit code 0 = exists) */
 export async function isCommandInstalled(
@@ -20,6 +21,7 @@ export async function isCommandInstalled(
 }
 
 const DEFAULT_DEPENDENCY_IDS = ["symfony-cli", "node", "npm", "yarn", "pnpm", "bun"];
+const OPTIONAL_BUILT_IN_SECRET_IDS = new Set(["GITHUB_TOKEN"]);
 
 type DependencyStatus = {
   id: string;
@@ -73,4 +75,25 @@ export const getProjectDependencyStatus = async (
       };
     })
   );
+};
+
+export const getProjectSecretStatus = async (
+  deps: SecretRef[],
+  answers: Record<string, string>
+): Promise<DependencyStatus[]> => {
+  const applicable = deps.filter(
+    (dep) =>
+      matchesWhen(dep.when, answers) &&
+      !OPTIONAL_BUILT_IN_SECRET_IDS.has(dep.id.toUpperCase())
+  );
+  return applicable.map(({ id }) => ({
+    id,
+    name: id,
+    installed: isSecretAvailable(id),
+    instructions: [
+      `Secret '${id}' is required by this template.`,
+      "Set it in Options -> Manage secrets.",
+      `You can also set env vars: GITHUB_TOKEN or TZ_SECRET_${id.toUpperCase()}.`,
+    ],
+  }));
 };

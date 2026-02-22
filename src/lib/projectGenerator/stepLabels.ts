@@ -12,7 +12,12 @@ export function getStepLabel(
     return step.label;
   }
   const config = step.config ?? {};
-  const resolved = resolveVariables(config, ctx.answers, ctx.profile) as Record<
+  const resolved = resolveVariables(
+    config,
+    ctx.answers,
+    ctx.profile,
+    ctx.secrets
+  ) as Record<
     string,
     unknown
   >;

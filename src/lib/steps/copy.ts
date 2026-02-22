@@ -33,14 +33,16 @@ export const copy: StepExecutor = async (ctx, config) => {
         sourcePath,
         destPath,
         ctx.answers,
-        ctx.profile
+        ctx.profile,
+        ctx.secrets
       );
     } else {
       const content = readFileSync(sourcePath, "utf-8");
       const interpolated = resolveVariables(
         content,
         ctx.answers,
-        ctx.profile
+        ctx.profile,
+        ctx.secrets
       ) as string;
       mkdirSync(pathDirname(destPath), { recursive: true });
       writeFileSync(destPath, interpolated, "utf-8");
@@ -54,7 +56,8 @@ function copyDirWithInterpolate(
   sourceDir: string,
   destDir: string,
   answers: Record<string, string>,
-  profile?: { name: string; email: string }
+  profile?: { name: string; email: string },
+  secrets?: Record<string, string>
 ): void {
   mkdirSync(destDir, { recursive: true });
   const entries = readdirSync(sourceDir, { withFileTypes: true });
@@ -62,10 +65,15 @@ function copyDirWithInterpolate(
     const srcPath = join(sourceDir, entry.name);
     const destPath = join(destDir, entry.name);
     if (entry.isDirectory()) {
-      copyDirWithInterpolate(srcPath, destPath, answers, profile);
+      copyDirWithInterpolate(srcPath, destPath, answers, profile, secrets);
     } else {
       const content = readFileSync(srcPath, "utf-8");
-      const interpolated = resolveVariables(content, answers, profile) as string;
+      const interpolated = resolveVariables(
+        content,
+        answers,
+        profile,
+        secrets
+      ) as string;
       mkdirSync(pathDirname(destPath), { recursive: true });
       writeFileSync(destPath, interpolated, "utf-8");
     }

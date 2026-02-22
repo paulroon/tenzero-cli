@@ -11,6 +11,7 @@ export type StepContext = {
   projectName: string;
   answers: ProjectBuilderAnswers;
   profile: Profile;
+  secrets?: Record<string, string>;
   /** Directory of the config file (for resolving relative paths in copyFiles, etc.) */
   configDir?: string;
 };
@@ -51,11 +52,15 @@ function getNested(obj: Record<string, unknown>, path: string): unknown {
 export function resolveVariables(
   value: unknown,
   answers: ProjectBuilderAnswers,
-  profile?: Profile
+  profile?: Profile,
+  secrets?: Record<string, string>
 ): unknown {
   const vars: Record<string, unknown> = { ...answers };
   if (profile) {
     vars.profile = { name: profile.name, email: profile.email };
+  }
+  if (secrets) {
+    vars.secret = secrets;
   }
 
   const resolve = (key: string): string => {
@@ -69,12 +74,12 @@ export function resolveVariables(
       .replace(/%([\w.]+)%/g, (_, key) => resolve(key));
   }
   if (Array.isArray(value)) {
-    return value.map((v) => resolveVariables(v, answers, profile));
+    return value.map((v) => resolveVariables(v, answers, profile, secrets));
   }
   if (value !== null && typeof value === "object") {
     const resolved: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) {
-      resolved[k] = resolveVariables(v, answers, profile);
+      resolved[k] = resolveVariables(v, answers, profile, secrets);
     }
     return resolved;
   }
@@ -86,5 +91,10 @@ export function resolveStepConfig(
   config: Record<string, unknown>,
   ctx: StepContext
 ): Record<string, unknown> {
-  return resolveVariables(config, ctx.answers, ctx.profile) as Record<string, unknown>;
+  return resolveVariables(
+    config,
+    ctx.answers,
+    ctx.profile,
+    ctx.secrets
+  ) as Record<string, unknown>;
 }
