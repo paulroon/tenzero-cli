@@ -66,6 +66,11 @@ export default function SecretsScreen({ onBack }: { onBack: () => void }) {
             }}
           />
         </Box>
+        <Alert variant="info" title="GitHub setup">
+          Create a Personal Access Token in GitHub Settings -> Developer settings ->
+          Personal access tokens, then copy it here. For public template repos, read-only
+          access is enough.
+        </Alert>
         <Text dimColor>
           Tip: env var GITHUB_TOKEN or TZ_SECRET_GITHUB_TOKEN overrides stored value.
         </Text>

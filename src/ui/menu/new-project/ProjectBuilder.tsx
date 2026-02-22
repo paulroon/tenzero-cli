@@ -320,7 +320,7 @@ export default function ProjectBuilder({
         <Box flexDirection="column" gap={1}>
           <Text color="yellow">New Project</Text>
           <Alert variant="error" title="No configs found">
-            No project configurations found in config/projects/
+            No app templates found in config/projects/
           </Alert>
         </Box>
       );
@@ -378,7 +378,7 @@ export default function ProjectBuilder({
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">New Project</Text>
         <Alert variant="error" title="Config not found">
-          Could not load project configuration
+          Could not load app template
         </Alert>
       </Box>
     );

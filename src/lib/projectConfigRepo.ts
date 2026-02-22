@@ -220,7 +220,7 @@ export async function installProjectConfig(
   options?: { replace?: boolean }
 ): Promise<void> {
   if (isIgnoredProjectConfigId(configId)) {
-    throw new Error(`Invalid project config id: ${configId}`);
+    throw new Error(`Invalid app template id: ${configId}`);
   }
 
   const replace = options?.replace === true;
@@ -231,7 +231,7 @@ export async function installProjectConfig(
 
   if (existsSync(destination)) {
     if (!replace) {
-      throw new Error(`Config already installed: ${configId}`);
+      throw new Error(`App template already installed: ${configId}`);
     }
     rmSync(destination, { recursive: true, force: true });
   }

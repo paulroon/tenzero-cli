@@ -18,7 +18,7 @@ const OPTIONS_MENU_ITEMS = [
   { label: "View Config", value: "view-config" },
   { label: "Edit Config", value: "edit-config" },
   { label: "Manage secrets", value: "manage-secrets" },
-  { label: "Install project config", value: "install-project-config" },
+  { label: "Manage app templates", value: "install-project-config" },
 ] as const;
 
 type OptionChoice = (typeof OPTIONS_MENU_ITEMS)[number]["value"];
@@ -60,7 +60,7 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
       setPhase("select");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to load project config list"
+        err instanceof Error ? err.message : "Failed to load app template list"
       );
       setPhase("error");
     }
@@ -125,7 +125,7 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
     } catch (err) {
       if (
         err instanceof Error &&
-        err.message.startsWith("Config already installed:")
+        err.message.startsWith("App template already installed:")
       ) {
         setSelectedConfigId(configId);
         setPhase("existing-choice");
@@ -179,8 +179,8 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   if (phase === "loading") {
     return (
       <Box flexDirection="column" gap={1}>
-        <Text color="yellow">Install project config</Text>
-        <Spinner label="Loading available project configs" />
+        <Text color="yellow">Manage app templates</Text>
+        <Spinner label="Loading available app templates" />
       </Box>
     );
   }
@@ -188,8 +188,8 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   if (phase === "working") {
     return (
       <Box flexDirection="column" gap={1}>
-        <Text color="yellow">Install project config</Text>
-        <Spinner label="Downloading selected project config" />
+        <Text color="yellow">Manage app templates</Text>
+        <Spinner label="Downloading selected app template" />
       </Box>
     );
   }
@@ -197,16 +197,16 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   if (phase === "existing-choice" && selectedConfigId) {
     return (
       <Box flexDirection="column" gap={1}>
-        <Text color="yellow">Install project config</Text>
+        <Text color="yellow">Manage app templates</Text>
         <Text>
-          '{selectedConfigId}' already exists in ~/tz/configs. What would you like
+          App template '{selectedConfigId}' already exists in ~/tz/configs. What would you like
           to do?
         </Text>
         <Box marginTop={1}>
           <Select
             options={[
               { label: "Update existing config", value: "update" },
-              { label: "Delete existing config", value: "delete" },
+              { label: "Delete existing template", value: "delete" },
               { label: "Cancel", value: "cancel" },
             ]}
             onChange={(value) =>
@@ -221,7 +221,7 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   if (phase === "error") {
     return (
       <Box flexDirection="column" gap={1}>
-        <Text color="yellow">Install project config</Text>
+        <Text color="yellow">Manage app templates</Text>
         <Alert variant="error" title="Action failed">
           {error ?? "Something went wrong"}
         </Alert>
@@ -247,7 +247,7 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   if (phase === "done") {
     return (
       <Box flexDirection="column" gap={1}>
-        <Text color="yellow">Install project config</Text>
+        <Text color="yellow">Manage app templates</Text>
         <Alert variant="success" title="Completed">
           {statusMessage ?? "Done"}
         </Alert>
@@ -274,21 +274,21 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   if (remoteConfigs.length === 0) {
     return (
       <Box flexDirection="column" gap={1}>
-        <Text color="yellow">Install project config</Text>
-        <Text dimColor>No project configs found in repository.</Text>
+        <Text color="yellow">Manage app templates</Text>
+        <Text dimColor>No app templates found in repository.</Text>
       </Box>
     );
   }
 
   return (
     <Box flexDirection="column" gap={1}>
-      <Text color="yellow">Install project config</Text>
-      <Text>Select a project config:</Text>
+      <Text color="yellow">Manage app templates</Text>
+      <Text>Select an app template:</Text>
       <Box marginTop={1}>
         <Select
           defaultValue={SELECT_PLACEHOLDER}
           options={[
-            { label: "Select a project config...", value: SELECT_PLACEHOLDER },
+            { label: "Select an app template...", value: SELECT_PLACEHOLDER },
             ...orderedRemoteConfigs.map((configId) => ({
               label: installedSet.has(configId)
                 ? formatInstalledLabel(configId)
