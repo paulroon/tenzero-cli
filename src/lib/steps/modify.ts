@@ -1,7 +1,11 @@
-import { join } from "node:path";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import type { StepContext, StepExecutor } from "./types";
 import { resolveStepConfig } from "./types";
+import {
+  assertNoSymlinkAtPath,
+  assertNoSymlinkInExistingPath,
+  resolveConfinedPath,
+} from "@/lib/pathSafety";
 
 /** Escape special regex characters for literal string matching */
 function escapeRegex(str: string): string {
@@ -23,9 +27,21 @@ export const modify: StepExecutor = async (ctx, config) => {
   if (typeof file !== "string") {
     throw new Error("modify step requires 'file' string");
   }
-  const filePath = join(ctx.projectPath, file);
+  const filePath = resolveConfinedPath({
+    step: "modify",
+    field: "file",
+    baseDir: ctx.projectPath,
+    userPath: file,
+  });
+  assertNoSymlinkInExistingPath({
+    step: "modify",
+    field: "file",
+    baseDir: ctx.projectPath,
+    targetPath: filePath,
+  });
+  assertNoSymlinkAtPath({ step: "modify", field: "file", path: filePath });
   if (!existsSync(filePath)) {
-    throw new Error(`modify: file not found: ${filePath}`);
+    throw new Error(`modify.config.file rejected: file not found: ${file}`);
   }
   let content = readFileSync(filePath, "utf-8");
   if (Array.isArray(replacements)) {

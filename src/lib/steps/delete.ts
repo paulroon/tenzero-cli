@@ -1,7 +1,11 @@
-import { join } from "node:path";
 import { unlinkSync, existsSync } from "node:fs";
 import type { StepContext, StepExecutor } from "./types";
 import { resolveStepConfig } from "./types";
+import {
+  assertNoSymlinkAtPath,
+  assertNoSymlinkInExistingPath,
+  resolveConfinedPath,
+} from "@/lib/pathSafety";
 
 export const deleteStep: StepExecutor = async (ctx, config) => {
   const resolved = resolveStepConfig(config, ctx);
@@ -10,10 +14,22 @@ export const deleteStep: StepExecutor = async (ctx, config) => {
   if (typeof file !== "string") {
     throw new Error("delete step requires 'file' string");
   }
-  const filePath = join(ctx.projectPath, file);
+  const filePath = resolveConfinedPath({
+    step: "delete",
+    field: "file",
+    baseDir: ctx.projectPath,
+    userPath: file,
+  });
+  assertNoSymlinkInExistingPath({
+    step: "delete",
+    field: "file",
+    baseDir: ctx.projectPath,
+    targetPath: filePath,
+  });
+  assertNoSymlinkAtPath({ step: "delete", field: "file", path: filePath });
   if (!existsSync(filePath)) {
     if (required) {
-      throw new Error(`delete: file not found: ${filePath}`);
+      throw new Error(`delete.config.file rejected: file not found: ${file}`);
     }
     return;
   }
