@@ -14,6 +14,10 @@
 - `integrations/iam-state-backend-policy-v1.md`
 - `integrations/testing-strategy-v1.md`
 - `integrations/ui-spec-integrations-and-infra-v1.md`
+- `integrations/operator-runbook-lock-timeout-stale-lock-v1.md`
+- `integrations/operator-runbook-force-unlock-replan-v1.md`
+- `integrations/operator-runbook-prod-plan-apply-safety-v1.md`
+- `integrations/deployments-v1-e2e-smoke-checklist.md`
 
 ## Infra Compatibility Matrix
 
@@ -21,7 +25,7 @@ This matrix tracks which `infra.version` schema majors are supported by `tz-cli`
 
 | tz-cli release line | Supported `infra.version` majors | Notes |
 | --- | --- | --- |
-| current (main) | `1` | Initial Deployments schema |
+| current (main) | `1` | Deployments v1 shipped through PR-11 behavior set |
 
 ## Release/docs workflow
 
@@ -30,3 +34,13 @@ For each `tz-cli` release that changes infra behavior:
 1. Update the compatibility matrix in this file.
 2. Update `tz-project-config/docs/integrations/infra-versioning-policy.md` if policy/compatibility changed.
 3. Update relevant ADR/spec docs when schema or compatibility semantics change.
+4. Verify runbooks reflect current guardrails:
+   - lock timeout/stale lock
+   - force-unlock + mandatory re-plan
+   - prod plan/apply safety
+5. Run the launch checklist:
+   - `integrations/deployments-v1-e2e-smoke-checklist.md`
+6. Confirm command surface and docs remain aligned:
+   - `tz deployments plan|apply|destroy|report`
+   - `report --watch` flags
+   - drift confirmation flags and prod destroy confirmation phrases
