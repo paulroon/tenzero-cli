@@ -41,6 +41,14 @@ export type ApplyResult = {
   logs?: string[];
 };
 
+export type DestroyResult = {
+  status: EnvironmentStatus;
+  summary: DeploymentRunSummary;
+  warnings?: AdapterWarning[];
+  errors?: AdapterError[];
+  logs?: string[];
+};
+
 export type ReportResult = {
   status: EnvironmentStatus;
   driftDetected: boolean;
@@ -52,6 +60,11 @@ export type ReportResult = {
 export type DeployAdapter = {
   plan(args: { projectPath: string; environmentId: string; nowIso: string }): Promise<PlanResult>;
   apply(args: { projectPath: string; environmentId: string; nowIso: string }): Promise<ApplyResult>;
+  destroy(args: {
+    projectPath: string;
+    environmentId: string;
+    nowIso: string;
+  }): Promise<DestroyResult>;
   report(args: { projectPath: string; environmentId: string; nowIso: string }): Promise<ReportResult>;
 };
 
@@ -60,6 +73,12 @@ export type OrchestrationOptions = {
   actor?: string;
   lockTimeoutMs?: number;
   staleLockThresholdMs?: number;
+};
+
+export type DestroyConfirmation = {
+  confirmEnvironmentId: string;
+  confirmPhrase: string;
+  confirmProdPhrase?: string;
 };
 
 const DEFAULT_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
@@ -178,6 +197,47 @@ function ensurePostForceUnlockReplan(state: DeploymentEnvironmentState): void {
     throw new Error(
       "REPLAN_REQUIRED_AFTER_FORCE_UNLOCK: Run plan after force-unlock before apply."
     );
+  }
+}
+
+function expectedDestroyPhrase(environmentId: string): string {
+  return `destroy ${environmentId}`;
+}
+
+function expectedProdDestroyPhrase(): string {
+  return "destroy prod permanently";
+}
+
+function assertDestroyConfirmation(
+  environmentId: string,
+  confirmation: DestroyConfirmation | undefined
+): void {
+  if (!confirmation) {
+    throw new Error(
+      "DESTROY_CONFIRMATION_REQUIRED: Provide explicit destroy confirmation to continue."
+    );
+  }
+  if (confirmation.confirmEnvironmentId !== environmentId) {
+    throw new Error(
+      `DESTROY_ENVIRONMENT_MISMATCH: Confirmation environment '${confirmation.confirmEnvironmentId}' does not match '${environmentId}'.`
+    );
+  }
+  if (confirmation.confirmPhrase !== expectedDestroyPhrase(environmentId)) {
+    throw new Error(
+      `DESTROY_CONFIRMATION_PHRASE_INVALID: Expected '${expectedDestroyPhrase(environmentId)}'.`
+    );
+  }
+  if (environmentId === "prod") {
+    if (!confirmation.confirmProdPhrase) {
+      throw new Error(
+        "PROD_DESTROY_SECOND_CONFIRM_REQUIRED: Provide secondary confirmation for prod destroy."
+      );
+    }
+    if (confirmation.confirmProdPhrase !== expectedProdDestroyPhrase()) {
+      throw new Error(
+        `PROD_DESTROY_CONFIRMATION_INVALID: Expected '${expectedProdDestroyPhrase()}'.`
+      );
+    }
   }
 }
 
@@ -340,4 +400,65 @@ export async function runReport(
     nowIso
   );
   return result;
+}
+
+export async function runDestroy(
+  config: TzConfig,
+  projectPath: string,
+  environmentId: string,
+  adapter: DeployAdapter,
+  confirmation: DestroyConfirmation,
+  options?: OrchestrationOptions
+): Promise<DestroyResult> {
+  assertDeploymentsModeEnabled(config);
+  assertDestroyConfirmation(environmentId, confirmation);
+
+  const nowIso = options?.nowIso ?? new Date().toISOString();
+  const lockTimeoutMs = options?.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+  const staleLockThresholdMs =
+    options?.staleLockThresholdMs ?? DEFAULT_STALE_LOCK_THRESHOLD_MS;
+  const runId = newRunId();
+
+  acquireLock(projectPath, environmentId, runId, nowIso, lockTimeoutMs, staleLockThresholdMs);
+  try {
+    const result = await adapter.destroy({ projectPath, environmentId, nowIso });
+    const { configPathState: state, save } = getOrCreateEnvState(projectPath, environmentId);
+    save({
+      ...state,
+      lastStatus: result.status === "healthy" ? "unknown" : result.status,
+      activeLock: undefined,
+    });
+    recordDeploymentRun(
+      projectPath,
+      {
+        environmentId,
+        action: "destroy",
+        status: result.errors && result.errors.length > 0 ? "failed" : "success",
+        actor: options?.actor,
+        summary: result.summary,
+        logs: result.logs,
+        startedAt: nowIso,
+        finishedAt: nowIso,
+      },
+      nowIso
+    );
+    return result;
+  } catch (error) {
+    recordDeploymentRun(
+      projectPath,
+      {
+        environmentId,
+        action: "destroy",
+        status: "failed",
+        actor: options?.actor,
+        logs: [error instanceof Error ? error.message : "Destroy failed"],
+        startedAt: nowIso,
+        finishedAt: nowIso,
+      },
+      nowIso
+    );
+    throw error;
+  } finally {
+    releaseLock(projectPath, environmentId);
+  }
 }
