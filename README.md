@@ -48,6 +48,28 @@ tz
 
 **First run:** You’ll be prompted for your name, email, and project directory (default: `~/Projects`). This is stored in `~/tz/config.json`.
 
+### Deployments commands
+
+You can run deployments actions directly from the shell:
+
+```bash
+tz deployments plan --env test
+tz deployments apply --env test
+tz deployments report --env test
+tz deployments destroy --env test --confirm-env test --confirm "destroy test"
+```
+
+For `prod` destroy, a second confirmation is required:
+
+```bash
+tz deployments destroy --env prod --confirm-env prod --confirm "destroy prod" --confirm-prod "destroy prod permanently"
+```
+
+Notes:
+- Commands fail fast if Deployments mode gate checks are not satisfied.
+- Commands run in the current working directory unless `--project <path>` is provided.
+- `apply` for `prod` can require explicit drift confirmation via `--confirm-drift-prod`.
+
 ### Main menu
 
 | Option         | Description                                |
