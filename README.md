@@ -69,7 +69,7 @@ tz deployments destroy --env prod --confirm-env prod --confirm "destroy prod" --
 Notes:
 - Commands fail fast if Deployments mode gate checks are not satisfied.
 - Commands run in the current working directory unless `--project <path>` is provided.
-- `apply` runs a preflight drift check; if drift is detected, re-run with `--confirm-drift` (or `--confirm-drift-prod` for prod workflows).
+- `apply` runs a preflight drift check; if drift is detected, use `--confirm-drift` for non-prod and `--confirm-drift-prod` for prod.
 - `report --watch` supports refresh polling with `--interval-seconds` and `--max-cycles`.
 
 ### Main menu

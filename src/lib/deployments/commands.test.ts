@@ -137,6 +137,54 @@ describe("deployments commands", () => {
     expect(lines.join("\n")).toContain("Pre-apply drift check failed");
   });
 
+  test("apply command for prod requires --confirm-drift-prod specifically", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(
+      ["deployments", "apply", "--env", "prod", "--confirm-drift"],
+      {
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({ allowed: true, issues: [] }),
+        assertMode: () => undefined,
+        createAdapter: () => ({} as never),
+        runReport: async () => ({
+          status: "drifted",
+          driftDetected: true,
+        }),
+        runApply: async () => ({
+          status: "healthy",
+          summary: { add: 0, change: 1, destroy: 0 },
+        }),
+        writeLine: (line) => lines.push(line),
+      }
+    );
+    expect(result.exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("--confirm-drift-prod");
+  });
+
+  test("apply command for non-prod accepts --confirm-drift", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(
+      ["deployments", "apply", "--env", "test", "--confirm-drift"],
+      {
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({ allowed: true, issues: [] }),
+        assertMode: () => undefined,
+        createAdapter: () => ({} as never),
+        runReport: async () => ({
+          status: "drifted",
+          driftDetected: true,
+        }),
+        runApply: async () => ({
+          status: "healthy",
+          summary: { add: 0, change: 1, destroy: 0 },
+        }),
+        writeLine: (line) => lines.push(line),
+      }
+    );
+    expect(result.exitCode).toBe(0);
+    expect(lines.join("\n")).toContain("Apply summary: add=0, change=1, destroy=0");
+  });
+
   test("report command prints remediation hints for drifted", async () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(["deployments", "report", "--env", "uat"], {

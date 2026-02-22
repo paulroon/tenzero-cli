@@ -201,13 +201,16 @@ export async function maybeRunDeploymentsCommand(
         writeErrors(deps.writeLine, preflight.errors ?? []);
         return { handled: true, exitCode: 1 };
       }
-      if (
-        preflight.status === "drifted" &&
-        flags["confirm-drift"] !== true &&
-        flags["confirm-drift-prod"] !== true
-      ) {
+      const requiresProdDriftConfirm = environmentId === "prod";
+      const hasDriftConfirm =
+        requiresProdDriftConfirm
+          ? flags["confirm-drift-prod"] === true
+          : flags["confirm-drift"] === true;
+      if (preflight.status === "drifted" && !hasDriftConfirm) {
         deps.writeLine(
-          `Pre-apply drift check failed for '${environmentId}'. Run plan/review and retry with --confirm-drift when ready.`
+          requiresProdDriftConfirm
+            ? `Pre-apply drift check failed for '${environmentId}'. Run plan/review and retry with --confirm-drift-prod when ready.`
+            : `Pre-apply drift check failed for '${environmentId}'. Run plan/review and retry with --confirm-drift when ready.`
         );
         return { handled: true, exitCode: 1 };
       }
