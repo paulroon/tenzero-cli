@@ -9,20 +9,43 @@ import {
 import { dirname, join } from "node:path";
 import {
   getUserConfigsDir,
+  getUserConfigPath,
   PROJECT_BUILDER_CONFIG_FILENAMES,
 } from "@/lib/paths";
 import { parseConfigFile } from "@/lib/config/parseConfigFile";
 import { getSecretValue } from "@/lib/secrets";
+import { parseJsonFile } from "@/lib/json";
 
 const REPO_OWNER = "paulroon";
 const REPO_NAME = "tz-project-configs";
 const REPO_BRANCH = "main";
+const SOURCE_META_FILENAME = ".tz-template-source.json";
+
+type RepoRefResolution = {
+  ref: string;
+  pinned: boolean;
+};
+
+let cachedRepoRef: RepoRefResolution | null = null;
 
 type GitHubContentEntry = {
   name: string;
   path: string;
   type: "file" | "dir";
-  download_url: string | null;
+  sha: string;
+};
+
+type GitHubBranchResponse = {
+  commit?: {
+    sha?: unknown;
+  };
+};
+
+type GitHubFileResponse = {
+  type: "file";
+  path: string;
+  content?: unknown;
+  encoding?: unknown;
 };
 
 function isIgnoredProjectConfigId(configId: string): boolean {
@@ -33,6 +56,37 @@ function withCacheBust(url: string): string {
   const parsed = new URL(url);
   parsed.searchParams.set("_tz", Date.now().toString());
   return parsed.toString();
+}
+
+function getConfiguredProjectConfigRef(): string | null {
+  const raw = parseJsonFile<Record<string, unknown>>(getUserConfigPath());
+  const ref = raw?.projectConfigRef;
+  if (typeof ref !== "string") return null;
+  const normalized = ref.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+async function resolveDefaultBranchToCommitSha(): Promise<string> {
+  const encodedBranch = encodeURIComponent(REPO_BRANCH);
+  const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/branches/${encodedBranch}`;
+  const branch = await fetchGitHubJson<GitHubBranchResponse>(url);
+  const sha = branch.commit?.sha;
+  if (typeof sha !== "string" || !/^[a-f0-9]{40}$/i.test(sha)) {
+    throw new Error("Failed to resolve template repository branch to a pinned commit SHA.");
+  }
+  return sha;
+}
+
+async function getEffectiveRepoRef(): Promise<RepoRefResolution> {
+  if (cachedRepoRef) return cachedRepoRef;
+  const configuredRef = getConfiguredProjectConfigRef();
+  if (configuredRef) {
+    cachedRepoRef = { ref: configuredRef, pinned: true };
+    return cachedRepoRef;
+  }
+  const resolvedSha = await resolveDefaultBranchToCommitSha();
+  cachedRepoRef = { ref: resolvedSha, pinned: true };
+  return cachedRepoRef;
 }
 
 function githubHeaders(base?: Record<string, string>): Record<string, string> {
@@ -121,12 +175,14 @@ async function fetchGitHubFile(url: string): Promise<Uint8Array> {
   return new Uint8Array(bytes);
 }
 
-async function listRepoPath(pathInRepo: string): Promise<GitHubContentEntry[]> {
+async function listRepoPath(pathInRepo: string, ref: string): Promise<GitHubContentEntry[]> {
   const encodedPath = pathInRepo
     .split("/")
     .map((segment) => encodeURIComponent(segment))
     .join("/");
-  const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${encodedPath}?ref=${REPO_BRANCH}`;
+  const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${encodedPath}?ref=${encodeURIComponent(
+    ref
+  )}`;
   const data = await fetchGitHubJson<GitHubContentEntry[] | GitHubContentEntry>(url);
   if (!Array.isArray(data)) {
     throw new Error(`Expected directory for '${pathInRepo}'`);
@@ -134,21 +190,58 @@ async function listRepoPath(pathInRepo: string): Promise<GitHubContentEntry[]> {
   return data;
 }
 
-async function downloadRepoDirectory(pathInRepo: string, localTarget: string): Promise<void> {
-  const entries = await listRepoPath(pathInRepo);
+async function fetchRepoFile(pathInRepo: string, ref: string): Promise<Uint8Array> {
+  const encodedPath = pathInRepo
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${encodedPath}?ref=${encodeURIComponent(
+    ref
+  )}`;
+  const data = await fetchGitHubJson<GitHubFileResponse | GitHubContentEntry[]>(url);
+  if (Array.isArray(data)) {
+    throw new Error(`Expected file for '${pathInRepo}'`);
+  }
+  if (data.type !== "file") {
+    throw new Error(`Expected file for '${pathInRepo}'`);
+  }
+  if (data.encoding !== "base64" || typeof data.content !== "string") {
+    throw new Error(`Unexpected content encoding while downloading '${pathInRepo}'`);
+  }
+  const raw = data.content.replace(/\n/g, "");
+  return new Uint8Array(Buffer.from(raw, "base64"));
+}
+
+async function downloadRepoDirectory(
+  pathInRepo: string,
+  localTarget: string,
+  ref: string
+): Promise<void> {
+  const entries = await listRepoPath(pathInRepo, ref);
   for (const entry of entries) {
     const destinationPath = join(localTarget, entry.name);
     if (entry.type === "dir") {
       mkdirSync(destinationPath, { recursive: true });
-      await downloadRepoDirectory(entry.path, destinationPath);
+      await downloadRepoDirectory(entry.path, destinationPath, ref);
       continue;
     }
-    if (entry.type === "file" && entry.download_url) {
-      const fileBytes = await fetchGitHubFile(entry.download_url);
+    if (entry.type === "file") {
+      const fileBytes = await fetchRepoFile(entry.path, ref);
       mkdirSync(dirname(destinationPath), { recursive: true });
       writeFileSync(destinationPath, fileBytes);
     }
   }
+}
+
+function writeTemplateSourceMetadata(configId: string, destination: string, ref: string): void {
+  const metaPath = join(destination, SOURCE_META_FILENAME);
+  const metadata = {
+    templateId: configId,
+    repository: `${REPO_OWNER}/${REPO_NAME}`,
+    ref,
+    installedAt: new Date().toISOString(),
+  };
+  writeFileSync(metaPath, JSON.stringify(metadata, null, 2), "utf-8");
 }
 
 export function getLocalProjectConfigsDir(): string {
@@ -204,8 +297,11 @@ export function deleteInstalledProjectConfig(configId: string): void {
 }
 
 export async function listRemoteProjectConfigs(): Promise<string[]> {
+  const repoRef = await getEffectiveRepoRef();
   const root = await fetchGitHubJson<GitHubContentEntry[]>(
-    `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents?ref=${REPO_BRANCH}`
+    `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents?ref=${encodeURIComponent(
+      repoRef.ref
+    )}`
   );
   return root
     .filter(
@@ -236,6 +332,8 @@ export async function installProjectConfig(
     rmSync(destination, { recursive: true, force: true });
   }
 
+  const repoRef = await getEffectiveRepoRef();
   mkdirSync(destination, { recursive: true });
-  await downloadRepoDirectory(configId, destination);
+  await downloadRepoDirectory(configId, destination, repoRef.ref);
+  writeTemplateSourceMetadata(configId, destination, repoRef.ref);
 }
