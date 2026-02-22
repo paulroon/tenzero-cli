@@ -41,6 +41,10 @@ export function getStepLabel(
       const file = (resolved.file ?? config.file ?? "?") as string;
       return `Delete ${file}`;
     }
+    case "waitForHttp": {
+      const url = (resolved.url ?? config.url ?? "?") as string;
+      return `Wait for ${url}`;
+    }
     case "finalize":
       return "Finalize (git init, .tzconfig)";
     default:

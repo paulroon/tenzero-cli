@@ -38,6 +38,15 @@ function isDockerizedValue(value: unknown): boolean {
   return value === "yes" || value === "true";
 }
 
+function isPermissionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes("EACCES") || error.message.includes("EPERM");
+}
+
+function hasDockerComposeFile(projectPath: string): boolean {
+  return existsSync(join(projectPath, "docker-compose.yml"));
+}
+
 function detectHostPortFromCompose(projectPath: string): string | null {
   const composePath = join(projectPath, "docker-compose.yml");
   if (!existsSync(composePath)) return null;
@@ -179,17 +188,29 @@ export default function Dashboard({
   const handleDeleteConfirm = async () => {
     try {
       const isDockerized = isDockerizedValue(currentProject.builderAnswers?.dockerize);
-      if (isDockerized && makeTargets.includes("down")) {
-        try {
-          await callShell("make", ["down"], {
+
+      const stopDockerIfPossible = async () => {
+        if (!isDockerized || !hasDockerComposeFile(currentProject.path)) return;
+        await callShell(
+          "docker",
+          ["compose", "down", "--remove-orphans", "--volumes"],
+          {
             cwd: currentProject.path,
+            stdin: "ignore",
             throwOnNonZero: false,
-          });
-        } catch {
-          /* ignore: make down failed or target missing, proceed with delete */
-        }
+          }
+        );
+      };
+
+      await stopDockerIfPossible();
+      try {
+        rmSync(currentProject.path, { recursive: true });
+      } catch (err) {
+        if (!isDockerized || !isPermissionError(err)) throw err;
+        // If docker still has a bind mount or locked files, ensure it's fully down.
+        await stopDockerIfPossible();
+        rmSync(currentProject.path, { recursive: true });
       }
-      rmSync(currentProject.path, { recursive: true });
       const updatedConfig = syncProjects(config);
       saveConfig(updatedConfig);
       onConfigUpdate?.(updatedConfig);
