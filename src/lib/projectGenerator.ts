@@ -31,6 +31,7 @@ export async function generateProject(
     configDir?: string;
     projectType: ProjectType;
     profile: Profile;
+    allowShellSyntaxCommands?: boolean;
     onProgress?: GenerationProgressCallback;
   }
 ): Promise<void> {
@@ -51,6 +52,7 @@ export async function generateProject(
     answers,
     profile: options.profile,
     secrets: getSecretsForInterpolation(),
+    allowShellSyntaxCommands: options.allowShellSyntaxCommands,
     configDir: options.configDir,
   };
 

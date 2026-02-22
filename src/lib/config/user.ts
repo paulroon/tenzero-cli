@@ -13,6 +13,8 @@ export type TzConfig = {
   projects: string[];
   /** Editor command to open projects (e.g. cursor, code). Default: cursor */
   editor?: string;
+  /** Allow shell syntax in run commands without per-run confirmation prompt */
+  allowShellSyntax?: boolean;
 };
 
 /** Scan project directory for subdirectories that contain .tzconfig; returns directory names (not full paths). */
@@ -60,12 +62,14 @@ export function loadConfig(): TzConfig | null {
     typeof parsed.editor === "string" && parsed.editor.trim()
       ? parsed.editor.trim()
       : DEFAULT_EDITOR;
+  const allowShellSyntax = parsed.allowShellSyntax === true;
   return syncProjects({
     name: parsed.name,
     email,
     projectDirectory,
     projects,
     editor,
+    allowShellSyntax,
   });
 }
 

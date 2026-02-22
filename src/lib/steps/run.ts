@@ -2,6 +2,7 @@ import type { StepContext, StepExecutor } from "./types";
 import { resolveStepConfig } from "./types";
 import { callShell, ShellError } from "@/lib/shell";
 import { GenerationError } from "@/lib/projectGenerator/GenerationError";
+import { detectBlockedShellSyntax } from "@/lib/runSafety";
 
 export const run: StepExecutor = async (ctx, config) => {
   const resolved = resolveStepConfig(config, ctx);
@@ -9,6 +10,12 @@ export const run: StepExecutor = async (ctx, config) => {
 
   if (typeof command !== "string") {
     throw new Error("run step requires 'command' string");
+  }
+  const blockedReason = detectBlockedShellSyntax(command);
+  if (blockedReason && ctx.allowShellSyntaxCommands !== true) {
+    throw new Error(
+      `run.config.command rejected: ${blockedReason}. Confirm shell-syntax execution in the UI, or set config.allowShellSyntax=true to always allow.`
+    );
   }
 
   try {

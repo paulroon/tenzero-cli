@@ -33,14 +33,23 @@ import GenerationOutput, {
   type GenerationStep,
 } from "@/ui/components/GenerationOutput";
 import { join } from "node:path";
+import { detectBlockedShellSyntax } from "@/lib/runSafety";
+import type { PipelineStep } from "@/lib/steps/types";
 
 type Phase =
   | "config-select"
   | "questions"
   | "confirm"
+  | "shell-syntax-warning"
   | "generating"
   | "generation-error"
   | "done";
+
+type ShellSyntaxWarning = {
+  label: string;
+  command: string;
+  reason: string;
+};
 
 type Props = {
   config: TzConfig;
@@ -81,6 +90,10 @@ export default function ProjectBuilder({
   const [failedConfigLabel, setFailedConfigLabel] = useState<string | null>(null);
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
   const [selectionRequest, setSelectionRequest] = useState(0);
+  const [shellSyntaxWarnings, setShellSyntaxWarnings] = useState<ShellSyntaxWarning[]>(
+    []
+  );
+  const [shellSyntaxWarningIndex, setShellSyntaxWarningIndex] = useState(0);
 
   const getNodeKey = (node: BuilderQuestionNode): string =>
     node.kind === "step" ? `step:${node.step.id}` : `group:${node.id}`;
@@ -269,18 +282,14 @@ export default function ProjectBuilder({
       ),
       status: "pending",
     }));
-    setGenerationSteps(initialSteps);
-    setGenerationError(null);
-    setGenerationLastOutput(null);
-    setPhase("generating");
-
-    const runCreate = async () => {
+    const runCreate = async (allowShellSyntaxCommands: boolean) => {
       try {
         await generateProject(projectDirectory, answers, {
           pipeline: builderConfig.pipeline,
           configDir: builderConfig._configDir,
           projectType: builderConfig.type,
           profile: { name: config.name, email: config.email ?? "" },
+          allowShellSyntaxCommands,
           onProgress: (progress) => {
             setGenerationSteps((prev) =>
               prev.map((s, i) => ({
@@ -311,7 +320,114 @@ export default function ProjectBuilder({
       }
     };
 
+    const warnings = getShellSyntaxWarnings(applicableSteps);
+    if (!config.allowShellSyntax && warnings.length > 0) {
+      setShellSyntaxWarnings(warnings);
+      setShellSyntaxWarningIndex(0);
+      setPhase("shell-syntax-warning");
+      return;
+    }
+
+    setGenerationSteps(initialSteps);
+    setGenerationError(null);
+    setGenerationLastOutput(null);
+    setPhase("generating");
+    void runCreate(config.allowShellSyntax === true);
+  };
+
+  const startGenerationAfterShellConfirm = () => {
+    if (!builderConfig) return;
+    const projectName = answers.projectName?.trim() ?? "";
+    const projectPath = join(projectDirectory, projectName);
+    const ctx = {
+      projectDirectory,
+      projectPath,
+      projectName,
+      answers,
+      profile: { name: config.name, email: config.email ?? "" },
+      configDir: builderConfig._configDir,
+    };
+    const applicableSteps = getApplicablePipelineSteps(builderConfig.pipeline, answers);
+    const allSteps = [
+      ...applicableSteps,
+      { type: "finalize", config: { projectType: builderConfig.type } },
+    ];
+    const initialSteps: GenerationStep[] = allSteps.map((step) => ({
+      label: getStepLabel(
+        step as Parameters<typeof getStepLabel>[0],
+        ctx as Parameters<typeof getStepLabel>[1]
+      ),
+      status: "pending",
+    }));
+    setGenerationSteps(initialSteps);
+    setGenerationError(null);
+    setGenerationLastOutput(null);
+    setPhase("generating");
+
+    const runCreate = async () => {
+      try {
+        await generateProject(projectDirectory, answers, {
+          pipeline: builderConfig.pipeline,
+          configDir: builderConfig._configDir,
+          projectType: builderConfig.type,
+          profile: { name: config.name, email: config.email ?? "" },
+          allowShellSyntaxCommands: true,
+          onProgress: (progress) => {
+            setGenerationSteps((prev) =>
+              prev.map((s, i) => ({
+                ...s,
+                status:
+                  i < progress.index
+                    ? "done"
+                    : i === progress.index
+                      ? progress.status
+                      : "pending",
+              }))
+            );
+          },
+        });
+        const updatedConfig = syncProjects(config);
+        saveConfig(updatedConfig);
+        onConfigUpdate?.(updatedConfig);
+        setPhase("done");
+        onProjectSelect?.(projectPath);
+      } catch (err) {
+        const errMessage =
+          err instanceof Error ? err.message : "Failed to create project";
+        const lastOutput = err instanceof GenerationError ? err.lastOutput : null;
+        setGenerationError(errMessage);
+        setGenerationLastOutput(lastOutput ?? null);
+        setPhase("generation-error");
+      }
+    };
+
     void runCreate();
+  };
+
+  const getShellSyntaxWarnings = (stepsToInspect: PipelineStep[]): ShellSyntaxWarning[] => {
+    const warnings: ShellSyntaxWarning[] = [];
+    for (const step of stepsToInspect) {
+      if (step.type !== "run") continue;
+      const command = step.config?.command;
+      if (typeof command !== "string") continue;
+      const reason = detectBlockedShellSyntax(command);
+      if (!reason) continue;
+      warnings.push({
+        label: getStepLabel(
+          step as Parameters<typeof getStepLabel>[0],
+          {
+            projectDirectory,
+            projectPath: join(projectDirectory, answers.projectName?.trim() ?? ""),
+            projectName: answers.projectName?.trim() ?? "",
+            answers,
+            profile: { name: config.name, email: config.email ?? "" },
+          } as Parameters<typeof getStepLabel>[1]
+        ),
+        command,
+        reason,
+      });
+    }
+    return warnings;
   };
 
   if (phase === "config-select") {
@@ -428,6 +544,49 @@ export default function ProjectBuilder({
             defaultChoice="confirm"
             onConfirm={handleConfirm}
             onCancel={() => setPhase("questions")}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (phase === "shell-syntax-warning") {
+    const currentWarning = shellSyntaxWarnings[shellSyntaxWarningIndex];
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Shell Syntax Confirmation</Text>
+        <Text>
+          This template includes shell syntax in run commands. Confirm each command before execution.
+        </Text>
+        {currentWarning ? (
+          <Box flexDirection="column" marginTop={1} gap={0}>
+            <Text>
+              Command {shellSyntaxWarningIndex + 1} of {shellSyntaxWarnings.length}
+            </Text>
+            <Text>
+              <Text bold>Step:</Text> {currentWarning.label}
+            </Text>
+            <Text>
+              <Text bold>Reason:</Text> {currentWarning.reason}
+            </Text>
+            <Text>
+              <Text bold>Command:</Text> {currentWarning.command}
+            </Text>
+          </Box>
+        ) : null}
+        <Box marginTop={1}>
+          <ConfirmInput
+            defaultChoice="cancel"
+            onConfirm={() => {
+              if (shellSyntaxWarningIndex < shellSyntaxWarnings.length - 1) {
+                setShellSyntaxWarningIndex((idx) => idx + 1);
+                return;
+              }
+              startGenerationAfterShellConfirm();
+            }}
+            onCancel={() => {
+              setPhase("confirm");
+            }}
           />
         </Box>
       </Box>

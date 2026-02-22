@@ -74,6 +74,7 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
       projectDirectory: resolvedPath,
       projects: [],
       editor: DEFAULT_EDITOR,
+      allowShellSyntax: false,
     });
     saveConfig(config);
     onComplete(config);

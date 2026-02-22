@@ -12,6 +12,8 @@ export type StepContext = {
   answers: ProjectBuilderAnswers;
   profile: Profile;
   secrets?: Record<string, string>;
+  /** User confirmed shell-syntax commands for this generation run */
+  allowShellSyntaxCommands?: boolean;
   /** Directory of the config file (for resolving relative paths in copyFiles, etc.) */
   configDir?: string;
 };
