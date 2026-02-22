@@ -20,6 +20,33 @@ export type ProjectOpenWith =
       url: string;
     };
 
+export type ProjectDeploymentAction =
+  | "plan"
+  | "apply"
+  | "destroy"
+  | "report"
+  | "rotate";
+
+export type ProjectDeploymentRunStatus = "success" | "failed" | "cancelled";
+
+export type ProjectDeploymentRunRecord = {
+  id: string;
+  environmentId: string;
+  action: ProjectDeploymentAction;
+  status: ProjectDeploymentRunStatus;
+  actor?: string;
+  summary?: {
+    add?: number;
+    change?: number;
+    destroy?: number;
+  };
+  logs?: string[];
+  startedAt: string;
+  finishedAt: string;
+  createdAt: string;
+  expiresAt: string;
+};
+
 export type ProjectOutputType = "string" | "number" | "boolean" | "json" | "secret_ref";
 export type ProjectOutputSource = "manualOverride" | "providerOutput" | "templateDefault";
 
@@ -61,6 +88,7 @@ export type TzProjectConfig = {
   builderAnswers?: Record<string, string>;
   openWith?: ProjectOpenWith;
   environmentOutputs?: ProjectEnvironmentOutputs;
+  deploymentRunHistory?: ProjectDeploymentRunRecord[];
 };
 
 const OUTPUT_SOURCE_PRIORITY: Record<ProjectOutputSource, number> = {
@@ -127,6 +155,69 @@ function sourceHasPriority(next: ProjectOutputSource, current: ProjectOutputSour
   return OUTPUT_SOURCE_PRIORITY[next] >= OUTPUT_SOURCE_PRIORITY[current];
 }
 
+function normalizeDeploymentRunHistory(raw: unknown): ProjectDeploymentRunRecord[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const records: ProjectDeploymentRunRecord[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const candidate = item as Partial<ProjectDeploymentRunRecord>;
+    const isValidAction =
+      candidate.action === "plan" ||
+      candidate.action === "apply" ||
+      candidate.action === "destroy" ||
+      candidate.action === "report" ||
+      candidate.action === "rotate";
+    const isValidStatus =
+      candidate.status === "success" ||
+      candidate.status === "failed" ||
+      candidate.status === "cancelled";
+    if (
+      typeof candidate.id !== "string" ||
+      typeof candidate.environmentId !== "string" ||
+      !isValidAction ||
+      !isValidStatus ||
+      typeof candidate.startedAt !== "string" ||
+      typeof candidate.finishedAt !== "string" ||
+      typeof candidate.createdAt !== "string" ||
+      typeof candidate.expiresAt !== "string"
+    ) {
+      continue;
+    }
+    records.push({
+      id: candidate.id,
+      environmentId: candidate.environmentId,
+      action: candidate.action,
+      status: candidate.status,
+      actor: typeof candidate.actor === "string" ? candidate.actor : undefined,
+      summary:
+        candidate.summary && typeof candidate.summary === "object"
+          ? {
+              add:
+                typeof (candidate.summary as { add?: unknown }).add === "number"
+                  ? ((candidate.summary as { add: number }).add)
+                  : undefined,
+              change:
+                typeof (candidate.summary as { change?: unknown }).change === "number"
+                  ? ((candidate.summary as { change: number }).change)
+                  : undefined,
+              destroy:
+                typeof (candidate.summary as { destroy?: unknown }).destroy === "number"
+                  ? ((candidate.summary as { destroy: number }).destroy)
+                  : undefined,
+            }
+          : undefined,
+      logs: Array.isArray(candidate.logs)
+        ? candidate.logs.filter((log): log is string => typeof log === "string")
+        : undefined,
+      startedAt: candidate.startedAt,
+      finishedAt: candidate.finishedAt,
+      createdAt: candidate.createdAt,
+      expiresAt: candidate.expiresAt,
+    });
+  }
+  return records.length > 0 ? records : undefined;
+}
+
 export function loadProjectConfig(path: string): TzProjectConfig | null {
   const config = parseJsonFile<Partial<TzProjectConfig>>(
     getProjectConfigPath(path)
@@ -155,6 +246,7 @@ export function loadProjectConfig(path: string): TzProjectConfig | null {
       : undefined;
 
   const environmentOutputs = normalizeEnvironmentOutputs(config.environmentOutputs);
+  const deploymentRunHistory = normalizeDeploymentRunHistory(config.deploymentRunHistory);
 
   return {
     name: config.name ?? "unknown",
@@ -163,6 +255,7 @@ export function loadProjectConfig(path: string): TzProjectConfig | null {
     builderAnswers,
     openWith,
     environmentOutputs,
+    deploymentRunHistory,
   };
 }
 
