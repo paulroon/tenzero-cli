@@ -47,6 +47,21 @@ export type ProjectDeploymentRunRecord = {
   expiresAt: string;
 };
 
+export type DeploymentEnvironmentState = {
+  lastPlanAt?: string;
+  lastPlanDriftDetected?: boolean;
+  lastForceUnlockAt?: string;
+  lastStatus?: "healthy" | "drifted" | "deploying" | "failed" | "unknown";
+  activeLock?: {
+    runId: string;
+    acquiredAt: string;
+  };
+};
+
+export type DeploymentState = {
+  environments: Record<string, DeploymentEnvironmentState>;
+};
+
 export type ProjectOutputType = "string" | "number" | "boolean" | "json" | "secret_ref";
 export type ProjectOutputSource = "manualOverride" | "providerOutput" | "templateDefault";
 
@@ -89,6 +104,7 @@ export type TzProjectConfig = {
   openWith?: ProjectOpenWith;
   environmentOutputs?: ProjectEnvironmentOutputs;
   deploymentRunHistory?: ProjectDeploymentRunRecord[];
+  deploymentState?: DeploymentState;
 };
 
 const OUTPUT_SOURCE_PRIORITY: Record<ProjectOutputSource, number> = {
@@ -218,6 +234,55 @@ function normalizeDeploymentRunHistory(raw: unknown): ProjectDeploymentRunRecord
   return records.length > 0 ? records : undefined;
 }
 
+function normalizeDeploymentState(raw: unknown): DeploymentState | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const environmentsRaw = (raw as { environments?: unknown }).environments;
+  if (!environmentsRaw || typeof environmentsRaw !== "object" || Array.isArray(environmentsRaw)) {
+    return undefined;
+  }
+  const environments: Record<string, DeploymentEnvironmentState> = {};
+  for (const [environmentId, value] of Object.entries(
+    environmentsRaw as Record<string, unknown>
+  )) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const candidate = value as Partial<DeploymentEnvironmentState>;
+    const activeLockCandidate =
+      candidate.activeLock &&
+      typeof candidate.activeLock === "object" &&
+      typeof (candidate.activeLock as { runId?: unknown }).runId === "string" &&
+      typeof (candidate.activeLock as { acquiredAt?: unknown }).acquiredAt === "string"
+        ? {
+            runId: (candidate.activeLock as { runId: string }).runId,
+            acquiredAt: (candidate.activeLock as { acquiredAt: string }).acquiredAt,
+          }
+        : undefined;
+    environments[environmentId] = {
+      lastPlanAt:
+        typeof candidate.lastPlanAt === "string" ? candidate.lastPlanAt : undefined,
+      lastPlanDriftDetected:
+        candidate.lastPlanDriftDetected === true
+          ? true
+          : candidate.lastPlanDriftDetected === false
+            ? false
+            : undefined,
+      lastForceUnlockAt:
+        typeof candidate.lastForceUnlockAt === "string"
+          ? candidate.lastForceUnlockAt
+          : undefined,
+      lastStatus:
+        candidate.lastStatus === "healthy" ||
+        candidate.lastStatus === "drifted" ||
+        candidate.lastStatus === "deploying" ||
+        candidate.lastStatus === "failed" ||
+        candidate.lastStatus === "unknown"
+          ? candidate.lastStatus
+          : undefined,
+      activeLock: activeLockCandidate,
+    };
+  }
+  return { environments };
+}
+
 export function loadProjectConfig(path: string): TzProjectConfig | null {
   const config = parseJsonFile<Partial<TzProjectConfig>>(
     getProjectConfigPath(path)
@@ -247,6 +312,7 @@ export function loadProjectConfig(path: string): TzProjectConfig | null {
 
   const environmentOutputs = normalizeEnvironmentOutputs(config.environmentOutputs);
   const deploymentRunHistory = normalizeDeploymentRunHistory(config.deploymentRunHistory);
+  const deploymentState = normalizeDeploymentState(config.deploymentState);
 
   return {
     name: config.name ?? "unknown",
@@ -256,6 +322,7 @@ export function loadProjectConfig(path: string): TzProjectConfig | null {
     openWith,
     environmentOutputs,
     deploymentRunHistory,
+    deploymentState,
   };
 }
 
