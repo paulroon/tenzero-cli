@@ -56,6 +56,7 @@ You can run deployments actions directly from the shell:
 tz deployments plan --env test
 tz deployments apply --env test
 tz deployments report --env test
+tz deployments report --env test --watch --interval-seconds 5 --max-cycles 3
 tz deployments destroy --env test --confirm-env test --confirm "destroy test"
 ```
 
@@ -68,7 +69,8 @@ tz deployments destroy --env prod --confirm-env prod --confirm "destroy prod" --
 Notes:
 - Commands fail fast if Deployments mode gate checks are not satisfied.
 - Commands run in the current working directory unless `--project <path>` is provided.
-- `apply` for `prod` can require explicit drift confirmation via `--confirm-drift-prod`.
+- `apply` runs a preflight drift check; if drift is detected, re-run with `--confirm-drift` (or `--confirm-drift-prod` for prod workflows).
+- `report --watch` supports refresh polling with `--interval-seconds` and `--max-cycles`.
 
 ### Main menu
 
