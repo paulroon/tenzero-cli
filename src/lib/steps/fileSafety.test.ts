@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { copy } from "@/lib/steps/copy";
@@ -138,5 +146,43 @@ describe("delete step file safety", () => {
     await expect(
       deleteStep(ctx, { file: "missing.txt", required: false })
     ).resolves.toBeUndefined();
+  });
+
+  test("deletes existing directory recursively", async () => {
+    const root = createTmpRoot();
+    const projectRoot = join(root, "project");
+    const nestedDir = join(projectRoot, "dir", "nested");
+    mkdirSync(nestedDir, { recursive: true });
+    writeFileSync(join(nestedDir, "file.txt"), "ok", "utf-8");
+    const ctx = createContext(projectRoot);
+
+    await expect(deleteStep(ctx, { file: "dir" })).resolves.toBeUndefined();
+    expect(existsSync(join(projectRoot, "dir"))).toBe(false);
+  });
+
+  test("deletes existing file", async () => {
+    const root = createTmpRoot();
+    const projectRoot = join(root, "project");
+    mkdirSync(projectRoot, { recursive: true });
+    const targetFile = join(projectRoot, "remove-me.txt");
+    writeFileSync(targetFile, "content", "utf-8");
+    const ctx = createContext(projectRoot);
+
+    await expect(deleteStep(ctx, { file: "remove-me.txt" })).resolves.toBeUndefined();
+    expect(existsSync(targetFile)).toBe(false);
+  });
+
+  test("optional missing directory returns without error", async () => {
+    const root = createTmpRoot();
+    const projectRoot = join(root, "project");
+    mkdirSync(projectRoot, { recursive: true });
+    const sentinel = join(projectRoot, "sentinel.txt");
+    writeFileSync(sentinel, "keep", "utf-8");
+    const ctx = createContext(projectRoot);
+
+    await expect(
+      deleteStep(ctx, { file: "missing-dir", required: false })
+    ).resolves.toBeUndefined();
+    expect(readFileSync(sentinel, "utf-8")).toBe("keep");
   });
 });

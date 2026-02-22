@@ -1,4 +1,4 @@
-import { unlinkSync, existsSync } from "node:fs";
+import { rmSync, existsSync } from "node:fs";
 import type { StepContext, StepExecutor } from "./types";
 import { resolveStepConfig } from "./types";
 import {
@@ -33,5 +33,5 @@ export const deleteStep: StepExecutor = async (ctx, config) => {
     }
     return;
   }
-  unlinkSync(filePath);
+  rmSync(filePath, { recursive: true, force: false });
 };
