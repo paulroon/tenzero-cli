@@ -15,6 +15,7 @@ import { getMakefileTargets } from "@/lib/makefile";
 import { callShell } from "@/lib/shell";
 import { setResumeProjectPath } from "@/lib/resumeState";
 import { getInkInstance, setInkInstance } from "@/lib/inkInstance";
+import { getErrorMessage } from "@/lib/errors";
 import App from "@/ui/App";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -217,7 +218,7 @@ export default function Dashboard({
       clearCurrentProject();
       onBack();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Failed to delete");
+      setDeleteError(getErrorMessage(err, "Failed to delete"));
     }
   };
 

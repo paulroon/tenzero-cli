@@ -110,6 +110,7 @@ type ParsedProjectBuilderConfig = {
   dependencies?: unknown[];
   secretDependencies?: unknown[];
   pipeline?: unknown[];
+  fragments?: Record<string, unknown>;
 };
 
 export type LoadProjectBuilderConfigResult = {
@@ -150,14 +151,101 @@ export function listProjectConfigs(): ProjectConfigMeta[] {
   return results;
 }
 
-function parsePipeline(raw: unknown): PipelineStep[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter(
-    (p): p is PipelineStep =>
-      p !== null &&
-      typeof p === "object" &&
-      typeof (p as PipelineStep).type === "string"
+type PipelineFragmentRef = {
+  useFragment: string;
+  when?: WhenClause;
+};
+
+function isPipelineStepLike(value: unknown): value is PipelineStep {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    typeof (value as PipelineStep).type === "string"
   );
+}
+
+function isPipelineFragmentRef(value: unknown): value is PipelineFragmentRef {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    typeof (value as PipelineFragmentRef).useFragment === "string"
+  );
+}
+
+function parseFragments(raw: unknown): Record<string, PipelineStep[]> {
+  if (!raw || typeof raw !== "object") return {};
+  const fragments: Record<string, PipelineStep[]> = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(value)) continue;
+    const steps: PipelineStep[] = [];
+    for (const entry of value) {
+      if (!isPipelineStepLike(entry)) continue;
+      steps.push(entry);
+    }
+    if (steps.length > 0) {
+      fragments[name] = steps;
+    }
+  }
+  return fragments;
+}
+
+function mergeWhenClauses(
+  a: Record<string, string> | undefined,
+  b: Record<string, string> | undefined
+): Record<string, string> | undefined {
+  if (!a && !b) return undefined;
+  if (!a) return { ...b } as Record<string, string>;
+  if (!b) return { ...a };
+  const merged: Record<string, string> = { ...a };
+  for (const [key, value] of Object.entries(b)) {
+    if (key in merged && merged[key] !== value) {
+      throw new Error(`Conflicting 'when' clause for '${key}'`);
+    }
+    merged[key] = value;
+  }
+  return merged;
+}
+
+function parsePipeline(
+  raw: unknown,
+  fragments: Record<string, PipelineStep[]>
+): { steps: PipelineStep[]; error?: string } {
+  if (!Array.isArray(raw)) return { steps: [] };
+  const steps: PipelineStep[] = [];
+  for (const entry of raw) {
+    if (isPipelineStepLike(entry)) {
+      steps.push(entry);
+      continue;
+    }
+    if (!isPipelineFragmentRef(entry)) {
+      continue;
+    }
+    const fragmentSteps = fragments[entry.useFragment];
+    if (!fragmentSteps) {
+      return {
+        steps: [],
+        error: `Unknown pipeline fragment reference: '${entry.useFragment}'`,
+      };
+    }
+    for (const fragmentStep of fragmentSteps) {
+      try {
+        const mergedWhen = mergeWhenClauses(fragmentStep.when, entry.when);
+        steps.push({
+          ...fragmentStep,
+          when: mergedWhen,
+        });
+      } catch (err) {
+        return {
+          steps: [],
+          error:
+            err instanceof Error
+              ? `Invalid fragment '${entry.useFragment}': ${err.message}`
+              : `Invalid fragment '${entry.useFragment}'`,
+        };
+      }
+    }
+  }
+  return { steps };
 }
 
 function optionsToSteps(options: Record<string, OptionDef>): BuilderStep[] {
@@ -424,7 +512,15 @@ export function loadProjectBuilderConfigWithError(
   const questionGroups = parseQuestionGroups(parsed.ui);
   const dependencies = parseDependencies(parsed.dependencies);
   const secretDependencies = parseSecretDependencies(parsed.secretDependencies);
-  const pipeline = parsePipeline(parsed.pipeline);
+  const fragments = parseFragments(parsed.fragments);
+  const pipelineResult = parsePipeline(parsed.pipeline, fragments);
+  if (pipelineResult.error) {
+    return {
+      config: null,
+      error: `Invalid config '${configPath}': ${pipelineResult.error}`,
+    };
+  }
+  const pipeline = pipelineResult.steps;
 
   const id = basename(dirname(configPath));
 
@@ -463,8 +559,27 @@ function validateParsedProjectBuilderConfig(
     if (!step || typeof step !== "object") {
       return `Invalid config '${configPath}': pipeline[${i}] must be an object.`;
     }
-    if (typeof (step as { type?: unknown }).type !== "string") {
-      return `Invalid config '${configPath}': pipeline[${i}].type must be a string.`;
+    const hasType = typeof (step as { type?: unknown }).type === "string";
+    const hasFragmentRef =
+      typeof (step as { useFragment?: unknown }).useFragment === "string";
+    if (!hasType && !hasFragmentRef) {
+      return `Invalid config '${configPath}': pipeline[${i}] must define 'type' or 'useFragment'.`;
+    }
+  }
+  if (typeof parsed.fragments !== "undefined") {
+    if (!parsed.fragments || typeof parsed.fragments !== "object") {
+      return `Invalid config '${configPath}': fragments must be an object when provided.`;
+    }
+    for (const [name, value] of Object.entries(parsed.fragments)) {
+      if (!Array.isArray(value)) {
+        return `Invalid config '${configPath}': fragments.${name} must be an array of steps.`;
+      }
+      for (let i = 0; i < value.length; i++) {
+        const step = value[i];
+        if (!step || typeof step !== "object" || typeof (step as { type?: unknown }).type !== "string") {
+          return `Invalid config '${configPath}': fragments.${name}[${i}].type must be a string.`;
+        }
+      }
     }
   }
   if (typeof parsed.questions !== "undefined") {

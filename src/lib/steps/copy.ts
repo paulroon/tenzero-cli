@@ -16,12 +16,13 @@ import {
   assertNoSymlinksRecursive,
   resolveConfinedPath,
 } from "@/lib/pathSafety";
+import { isInterpolationEnabled } from "./interpolation";
 
 export const copy: StepExecutor = async (ctx, config) => {
   const resolved = resolveStepConfig(config, ctx);
   const source = resolved.source;
   const dest = resolved.dest;
-  const interpolate = resolved.interpolate === true;
+  const interpolate = isInterpolationEnabled(config, resolved);
   if (typeof source !== "string" || typeof dest !== "string") {
     throw new Error("copy step requires 'source' and 'dest' strings");
   }

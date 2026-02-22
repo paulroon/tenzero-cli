@@ -7,6 +7,7 @@ import {
   syncProjects,
   type TzConfig,
 } from "@/lib/config";
+import { getErrorMessage } from "@/lib/errors";
 import {
   deleteInstalledProjectConfig,
   getInstalledProjectConfigVersion,
@@ -230,9 +231,7 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
       );
       setPhase("select");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load app template list"
-      );
+      setError(getErrorMessage(err, "Failed to load app template list"));
       setPhase("error");
     }
   };
@@ -302,7 +301,7 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
         setPhase("existing-choice");
         return;
       }
-      setError(err instanceof Error ? err.message : "Install failed");
+      setError(getErrorMessage(err, "Install failed"));
       setPhase("error");
     }
   };
@@ -339,7 +338,7 @@ function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
         setStatusMessage(`Deleted '${selectedConfigId}' from ~/tz/configs`);
         setPhase("done");
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Delete failed");
+        setError(getErrorMessage(err, "Delete failed"));
         setPhase("error");
       }
       return;

@@ -88,4 +88,74 @@ describe("project config validation", () => {
     expect(result.config).toBeNull();
     expect(result.error).toContain("questions[0].type must be one of");
   });
+
+  test("pipeline fragment reference expands into executable steps", () => {
+    const root = createTmpRoot();
+    const path = join(root, "config.yaml");
+    writeFileSync(
+      path,
+      [
+        "type: demo",
+        "fragments:",
+        "  hello:",
+        "    - type: append",
+        "      config:",
+        "        file: out.txt",
+        "        content: hello",
+        "pipeline:",
+        "  - useFragment: hello",
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const result = loadProjectBuilderConfigWithError(path);
+    expect(result.error).toBeUndefined();
+    expect(result.config).not.toBeNull();
+    expect(result.config?.pipeline.length).toBe(1);
+    expect(result.config?.pipeline[0]?.type).toBe("append");
+  });
+
+  test("unknown pipeline fragment reference fails predictably", () => {
+    const root = createTmpRoot();
+    const path = join(root, "config.yaml");
+    writeFileSync(
+      path,
+      ["type: demo", "pipeline:", "  - useFragment: missing", ""].join("\n"),
+      "utf-8"
+    );
+
+    const result = loadProjectBuilderConfigWithError(path);
+    expect(result.config).toBeNull();
+    expect(result.error).toContain("Unknown pipeline fragment reference");
+  });
+
+  test("fragment when conflicts fail predictably", () => {
+    const root = createTmpRoot();
+    const path = join(root, "config.yaml");
+    writeFileSync(
+      path,
+      [
+        "type: demo",
+        "fragments:",
+        "  dockerBlock:",
+        "    - type: copy",
+        "      when:",
+        "        dockerize: \"true\"",
+        "      config:",
+        "        source: a.txt",
+        "        dest: a.txt",
+        "pipeline:",
+        "  - useFragment: dockerBlock",
+        "    when:",
+        "      dockerize: \"false\"",
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const result = loadProjectBuilderConfigWithError(path);
+    expect(result.config).toBeNull();
+    expect(result.error).toContain("Conflicting 'when' clause");
+  });
 });

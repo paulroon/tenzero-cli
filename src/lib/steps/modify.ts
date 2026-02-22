@@ -6,6 +6,7 @@ import {
   assertNoSymlinkInExistingPath,
   resolveConfinedPath,
 } from "@/lib/pathSafety";
+import { isInterpolationEnabled, pickInterpolatedString } from "./interpolation";
 
 /** Escape special regex characters for literal string matching */
 function escapeRegex(str: string): string {
@@ -16,14 +17,8 @@ export const modify: StepExecutor = async (ctx, config) => {
   const resolved = resolveStepConfig(config, ctx);
   const file = resolved.file;
   const replacements = resolved.replacements;
-  // Use raw content for appendIfMissing when interpolate is false (default for append)
-  // so Symfony params like %kernel.project_dir% stay literal in .env
-  const appendRaw = config.appendIfMissing as
-    | { marker: string; content: string; interpolate?: boolean }
-    | undefined;
-  const appendIfMissing = resolved.appendIfMissing as
-    | { marker: string; content: string }
-    | undefined;
+  const appendRaw = config.appendIfMissing as Record<string, unknown> | undefined;
+  const appendResolved = resolved.appendIfMissing as Record<string, unknown> | undefined;
   if (typeof file !== "string") {
     throw new Error("modify step requires 'file' string");
   }
@@ -57,24 +52,27 @@ export const modify: StepExecutor = async (ctx, config) => {
       }
     }
   }
-  if (
-    appendIfMissing &&
-    typeof appendIfMissing === "object" &&
-    typeof appendIfMissing.marker === "string" &&
-    !content.includes(appendIfMissing.marker)
-  ) {
-    // When interpolate is false, use raw content so Symfony params like %kernel.project_dir% stay literal
-    let toAppend = "";
-    if (appendRaw?.interpolate === true && typeof appendIfMissing.content === "string") {
-      toAppend = appendIfMissing.content; // resolved (interpolated)
-    } else if (typeof appendRaw?.content === "string") {
-      toAppend = appendRaw.content; // raw (uninterpolated)
-    } else if (typeof appendIfMissing.content === "string") {
-      toAppend = appendIfMissing.content;
-    }
-    if (toAppend) {
-      const sep = content.length > 0 && !content.endsWith("\n") ? "\n\n" : "\n";
-      content = content + sep + toAppend;
+  if (appendRaw && appendResolved) {
+    const appendInterpolate = isInterpolationEnabled(appendRaw, appendResolved);
+    const marker = pickInterpolatedString({
+      interpolate: appendInterpolate,
+      rawValue: appendRaw.marker,
+      resolvedValue: appendResolved.marker,
+      step: "modify",
+      field: "appendIfMissing.marker",
+    });
+    if (!content.includes(marker)) {
+      const toAppend = pickInterpolatedString({
+        interpolate: appendInterpolate,
+        rawValue: appendRaw.content,
+        resolvedValue: appendResolved.content,
+        step: "modify",
+        field: "appendIfMissing.content",
+      });
+      if (toAppend) {
+        const sep = content.length > 0 && !content.endsWith("\n") ? "\n\n" : "\n";
+        content = content + sep + toAppend;
+      }
     }
   }
   writeFileSync(filePath, content, "utf-8");

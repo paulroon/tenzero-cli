@@ -35,6 +35,7 @@ import GenerationOutput, {
 import { join } from "node:path";
 import { detectBlockedShellSyntax } from "@/lib/runSafety";
 import type { PipelineStep } from "@/lib/steps/types";
+import { getErrorMessage } from "@/lib/errors";
 
 type Phase =
   | "config-select"
@@ -310,8 +311,7 @@ export default function ProjectBuilder({
         setPhase("done");
         onProjectSelect?.(projectPath);
       } catch (err) {
-        const errMessage =
-          err instanceof Error ? err.message : "Failed to create project";
+        const errMessage = getErrorMessage(err, "Failed to create project");
         const lastOutput =
           err instanceof GenerationError ? err.lastOutput : null;
         setGenerationError(errMessage);
@@ -392,8 +392,7 @@ export default function ProjectBuilder({
         setPhase("done");
         onProjectSelect?.(projectPath);
       } catch (err) {
-        const errMessage =
-          err instanceof Error ? err.message : "Failed to create project";
+        const errMessage = getErrorMessage(err, "Failed to create project");
         const lastOutput = err instanceof GenerationError ? err.lastOutput : null;
         setGenerationError(errMessage);
         setGenerationLastOutput(lastOutput ?? null);
