@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, Select, TextInput } from "@inkjs/ui";
 import { Box, Text } from "ink";
 import { useBackKey } from "@/hooks/useBackKey";
+import { listProjectConfigs, loadProjectBuilderConfig } from "@/lib/config";
 import {
   deleteStoredSecret,
   listStoredSecretKeys,
@@ -11,10 +12,9 @@ import {
 
 type Phase =
   | "menu"
-  | "set-github"
   | "set-custom-key"
-  | "set-custom-value"
-  | "delete"
+  | "set-secret-value"
+  | "secret-action"
   | "done"
   | "error";
 
@@ -22,61 +22,55 @@ export default function SecretsScreen({ onBack }: { onBack: () => void }) {
   const [phase, setPhase] = useState<Phase>("menu");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [customKey, setCustomKey] = useState<string | null>(null);
-  const secretKeys = listStoredSecretKeys();
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const storedSecretKeys = listStoredSecretKeys();
+  const storedSecretSet = useMemo(
+    () => new Set(storedSecretKeys),
+    [storedSecretKeys]
+  );
+  const availableSecretKeys = useMemo(() => {
+    const keys = new Set<string>(["GITHUB_TOKEN"]);
+    for (const config of listProjectConfigs()) {
+      const loaded = loadProjectBuilderConfig(config.id);
+      for (const dep of loaded?.secretDependencies ?? []) {
+        const normalized = normalizeSecretKey(dep.id);
+        if (normalized) keys.add(normalized);
+      }
+    }
+    return Array.from(keys).sort((a, b) => a.localeCompare(b));
+  }, []);
+  const listedSecretKeys = useMemo(() => {
+    const keys = new Set<string>(availableSecretKeys);
+    for (const key of storedSecretKeys) keys.add(key);
+    return Array.from(keys).sort((a, b) => a.localeCompare(b));
+  }, [availableSecretKeys, storedSecretKeys]);
 
   useBackKey(() => {
     if (phase === "menu") {
       onBack();
       return;
     }
-    if (phase === "set-custom-value") {
-      setCustomKey(null);
-      setPhase("set-custom-key");
+    if (phase === "set-custom-key") {
+      setSelectedKey(null);
+      setPhase("menu");
+      return;
+    }
+    if (phase === "set-secret-value") {
+      if (selectedKey && storedSecretSet.has(selectedKey)) {
+        setPhase("secret-action");
+      } else {
+        setSelectedKey(null);
+        setPhase("menu");
+      }
+      return;
+    }
+    if (phase === "secret-action") {
+      setSelectedKey(null);
+      setPhase("menu");
       return;
     }
     setPhase("menu");
   });
-
-  if (phase === "set-github") {
-    return (
-      <Box flexDirection="column" gap={1}>
-        <Text color="yellow">Secrets</Text>
-        <Text>Set GITHUB_TOKEN (leave blank to delete):</Text>
-        <Box marginTop={1}>
-          <TextInput
-            placeholder="ghp_..."
-            onSubmit={(value) => {
-              const next = value.trim();
-              try {
-                if (!next) {
-                  deleteStoredSecret("GITHUB_TOKEN");
-                  setStatusMessage("Deleted GITHUB_TOKEN from stored secrets.");
-                } else {
-                  setStoredSecret("GITHUB_TOKEN", next);
-                  setStatusMessage("Saved GITHUB_TOKEN to stored secrets.");
-                }
-                setPhase("done");
-              } catch (error) {
-                setErrorMessage(
-                  error instanceof Error ? error.message : "Failed to save secret."
-                );
-                setPhase("error");
-              }
-            }}
-          />
-        </Box>
-        <Alert variant="info" title="GitHub setup">
-          Create a Personal Access Token in GitHub Settings -> Developer settings ->
-          Personal access tokens, then copy it here. For public template repos, read-only
-          access is enough.
-        </Alert>
-        <Text dimColor>
-          Tip: env var GITHUB_TOKEN or TZ_SECRET_GITHUB_TOKEN overrides stored value.
-        </Text>
-      </Box>
-    );
-  }
 
   if (phase === "set-custom-key") {
     return (
@@ -95,8 +89,8 @@ export default function SecretsScreen({ onBack }: { onBack: () => void }) {
                 setPhase("error");
                 return;
               }
-              setCustomKey(normalized);
-              setPhase("set-custom-value");
+              setSelectedKey(normalized);
+              setPhase("set-secret-value");
             }}
           />
         </Box>
@@ -104,27 +98,62 @@ export default function SecretsScreen({ onBack }: { onBack: () => void }) {
     );
   }
 
-  if (phase === "set-custom-value" && customKey) {
+  if (phase === "secret-action" && selectedKey) {
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="yellow">Secrets</Text>
         <Text>
-          Set value for <Text bold>{customKey}</Text> (leave blank to delete):
+          <Text bold>{selectedKey}</Text> is already stored. What would you like to do?
+        </Text>
+        <Box marginTop={1}>
+          <Select
+            options={[
+              { label: "Update value", value: "update" },
+              { label: "Delete secret", value: "delete" },
+              { label: "Cancel", value: "cancel" },
+            ]}
+            onChange={(value) => {
+              if (value === "update") {
+                setPhase("set-secret-value");
+                return;
+              }
+              if (value === "delete") {
+                deleteStoredSecret(selectedKey);
+                setStatusMessage(`Deleted ${selectedKey}.`);
+                setSelectedKey(null);
+                setPhase("done");
+                return;
+              }
+              setSelectedKey(null);
+              setPhase("menu");
+            }}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (phase === "set-secret-value" && selectedKey) {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Secrets</Text>
+        <Text>
+          Set value for <Text bold>{selectedKey}</Text>:
         </Text>
         <Box marginTop={1}>
           <TextInput
-            placeholder="secret value"
+            placeholder={selectedKey === "GITHUB_TOKEN" ? "ghp_..." : "secret value"}
             onSubmit={(value) => {
               const next = value.trim();
+              if (!next) {
+                setErrorMessage("Secret value cannot be blank.");
+                setPhase("error");
+                return;
+              }
               try {
-                if (!next) {
-                  deleteStoredSecret(customKey);
-                  setStatusMessage(`Deleted ${customKey}.`);
-                } else {
-                  setStoredSecret(customKey, next);
-                  setStatusMessage(`Saved ${customKey}.`);
-                }
-                setCustomKey(null);
+                setStoredSecret(selectedKey, next);
+                setStatusMessage(`Saved ${selectedKey}.`);
+                setSelectedKey(null);
                 setPhase("done");
               } catch (error) {
                 setErrorMessage(
@@ -135,46 +164,19 @@ export default function SecretsScreen({ onBack }: { onBack: () => void }) {
             }}
           />
         </Box>
-      </Box>
-    );
-  }
-
-  if (phase === "delete") {
-    if (secretKeys.length === 0) {
-      return (
-        <Box flexDirection="column" gap={1}>
-          <Text color="yellow">Secrets</Text>
-          <Text dimColor>No stored secrets to delete.</Text>
-          <Box marginTop={1}>
-            <Select
-              options={[{ label: "Back", value: "back" }]}
-              onChange={() => setPhase("menu")}
-            />
-          </Box>
-        </Box>
-      );
-    }
-    return (
-      <Box flexDirection="column" gap={1}>
-        <Text color="yellow">Secrets</Text>
-        <Text>Select a secret to delete:</Text>
-        <Box marginTop={1}>
-          <Select
-            options={[
-              ...secretKeys.map((key) => ({ label: key, value: key })),
-              { label: "Cancel", value: "__cancel__" },
-            ]}
-            onChange={(value) => {
-              if (value === "__cancel__") {
-                setPhase("menu");
-                return;
-              }
-              deleteStoredSecret(value);
-              setStatusMessage(`Deleted ${value}.`);
-              setPhase("done");
-            }}
-          />
-        </Box>
+        {selectedKey === "GITHUB_TOKEN" && (
+          <>
+            <Alert variant="info" title="GitHub setup">
+              Create a Personal Access Token in GitHub Settings, then Developer
+              settings, then Personal access tokens. For public template repos,
+              read-only access is enough.
+            </Alert>
+            <Text dimColor>
+              Tip: env var GITHUB_TOKEN or TZ_SECRET_GITHUB_TOKEN overrides stored
+              value.
+            </Text>
+          </>
+        )}
       </Box>
     );
   }
@@ -234,38 +236,33 @@ export default function SecretsScreen({ onBack }: { onBack: () => void }) {
   return (
     <Box flexDirection="column" gap={1}>
       <Text color="yellow">Secrets</Text>
-      <Text>Stored secret keys:</Text>
-      {secretKeys.length > 0 ? (
-        <Text dimColor>{secretKeys.join(", ")}</Text>
-      ) : (
-        <Text dimColor>(none)</Text>
-      )}
-      <Text dimColor>
-        Use in templates: {"{{secret.GITHUB_TOKEN}}"} or {"{{secret.MY_KEY}}"}
-      </Text>
+      <Text>Select a secret to manage:</Text>
       <Box marginTop={1}>
         <Select
           options={[
-            { label: "Set GitHub token", value: "set-github" },
-            { label: "Add/update custom secret", value: "set-custom" },
-            { label: "Delete stored secret", value: "delete" },
+            ...listedSecretKeys.map((key) => ({
+              label: `${storedSecretSet.has(key) ? "✅" : "  "} ${key}`,
+              value: key,
+            })),
+            { label: "Add custom secret...", value: "__add_custom__" },
             { label: "Back to options", value: "back" },
           ]}
           onChange={(value) => {
-            if (value === "set-github") {
-              setPhase("set-github");
-              return;
-            }
-            if (value === "set-custom") {
-              setCustomKey(null);
+            if (value === "__add_custom__") {
+              setSelectedKey(null);
               setPhase("set-custom-key");
               return;
             }
-            if (value === "delete") {
-              setPhase("delete");
+            if (value === "back") {
+              onBack();
               return;
             }
-            onBack();
+            setSelectedKey(value);
+            if (storedSecretSet.has(value)) {
+              setPhase("secret-action");
+            } else {
+              setPhase("set-secret-value");
+            }
           }}
         />
       </Box>

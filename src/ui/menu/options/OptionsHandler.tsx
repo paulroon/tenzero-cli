@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Box, Text } from "ink";
-import { Alert, Select, Spinner } from "@inkjs/ui";
-import { DEFAULT_EDITOR, type TzConfig } from "@/lib/config";
+import { Alert, Select, Spinner, TextInput } from "@inkjs/ui";
+import {
+  DEFAULT_EDITOR,
+  saveConfig,
+  syncProjects,
+  type TzConfig,
+} from "@/lib/config";
 import {
   deleteInstalledProjectConfig,
   getInstalledProjectConfigVersion,
@@ -11,14 +16,12 @@ import {
   listRemoteProjectConfigs,
 } from "@/lib/projectConfigRepo";
 import { useBackKey } from "@/hooks/useBackKey";
-import ConfigSetup from "@/ui/ConfigSetup";
 import SecretsScreen from "@/ui/menu/options/SecretsScreen";
 
 const OPTIONS_MENU_ITEMS = [
-  { label: "View Config", value: "view-config" },
-  { label: "Edit Config", value: "edit-config" },
-  { label: "Manage secrets", value: "manage-secrets" },
-  { label: "Manage app templates", value: "install-project-config" },
+  { label: "Config", value: "config" },
+  { label: "Secrets", value: "manage-secrets" },
+  { label: "App Templates", value: "install-project-config" },
 ] as const;
 
 type OptionChoice = (typeof OPTIONS_MENU_ITEMS)[number]["value"];
@@ -26,6 +29,137 @@ type ExistingConfigChoice = "update" | "delete" | "cancel";
 const SELECT_PLACEHOLDER = "__select_project_config__";
 const DIM_GRAY = "\u001b[90m";
 const ANSI_RESET = "\u001b[0m";
+
+type ConfigField = "name" | "email" | "projectDirectory" | "editor";
+
+function ConfigScreen({
+  config,
+  onBack,
+  onConfigUpdate,
+}: {
+  config: TzConfig;
+  onBack: () => void;
+  onConfigUpdate?: (config: TzConfig) => void;
+}) {
+  const [phase, setPhase] = useState<"menu" | "edit" | "done" | "error">("menu");
+  const [selectedField, setSelectedField] = useState<ConfigField | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useBackKey(() => {
+    if (phase === "edit") {
+      setSelectedField(null);
+      setPhase("menu");
+      return;
+    }
+    if (phase === "done" || phase === "error") {
+      setPhase("menu");
+      return;
+    }
+    onBack();
+  });
+
+  const currentValue = (field: ConfigField): string => {
+    if (field === "editor") return config.editor || DEFAULT_EDITOR;
+    return config[field] || "";
+  };
+
+  const fieldLabel = (field: ConfigField): string => {
+    switch (field) {
+      case "name":
+        return "Name";
+      case "email":
+        return "Email";
+      case "projectDirectory":
+        return "Project Directory";
+      case "editor":
+        return "Editor";
+    }
+  };
+
+  const saveField = (field: ConfigField, value: string) => {
+    const next = value.trim();
+    if (field === "name" && !next) {
+      setErrorMessage("Name cannot be empty.");
+      setPhase("error");
+      return;
+    }
+    const updatedBase: TzConfig = {
+      ...config,
+      [field]: field === "editor" ? next || DEFAULT_EDITOR : next,
+    };
+    const updated = syncProjects(updatedBase);
+    saveConfig(updated);
+    onConfigUpdate?.(updated);
+    setStatusMessage(`Updated ${fieldLabel(field)}.`);
+    setSelectedField(null);
+    setPhase("done");
+  };
+
+  if (phase === "edit" && selectedField) {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Config</Text>
+        <Text>Update {fieldLabel(selectedField)}:</Text>
+        <Box marginTop={1}>
+          <TextInput
+            defaultValue={currentValue(selectedField)}
+            placeholder={fieldLabel(selectedField)}
+            onSubmit={(value) => saveField(selectedField, value)}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (phase === "done") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Config</Text>
+        <Alert variant="success" title="Completed">
+          {statusMessage ?? "Updated."}
+        </Alert>
+      </Box>
+    );
+  }
+
+  if (phase === "error") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="yellow">Config</Text>
+        <Alert variant="error" title="Update failed">
+          {errorMessage ?? "Could not update config."}
+        </Alert>
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Text color="yellow">Config</Text>
+      <Text>Choose a value to update:</Text>
+      <Box marginTop={1}>
+        <Select
+          options={[
+            { label: `Name: ${config.name}`, value: "name" },
+            { label: `Email: ${config.email || "(not set)"}`, value: "email" },
+            { label: `Project Directory: ${config.projectDirectory}`, value: "projectDirectory" },
+            { label: `Editor: ${config.editor || DEFAULT_EDITOR}`, value: "editor" },
+            { label: "Back to options", value: "__back__" },
+          ]}
+          onChange={(value) => {
+            if (value === "__back__") {
+              onBack();
+              return;
+            }
+            setSelectedField(value as ConfigField);
+            setPhase("edit");
+          }}
+        />
+      </Box>
+    </Box>
+  );
+}
 
 function InstallProjectConfigScreen({ onBack }: { onBack: () => void }) {
   const [phase, setPhase] = useState<
@@ -336,40 +470,12 @@ export default function OptionsHandler({ config, onBack, onConfigUpdate }: Props
     );
   }
 
-  if (choice === "view-config") {
+  if (choice === "config") {
     return (
-      <Box flexDirection="column" gap={1}>
-        <Text color="yellow">View Config</Text>
-        <Box flexDirection="column" padding={1}>
-          <Text>
-            <Text bold>Name: </Text>
-            {config.name}
-          </Text>
-          <Text>
-            <Text bold>Email: </Text>
-            {config.email || "(not set)"}
-          </Text>
-          <Text>
-            <Text bold>Project Directory: </Text>
-            {config.projectDirectory}
-          </Text>
-          <Text>
-            <Text bold>Editor: </Text>
-            {config.editor || DEFAULT_EDITOR}
-          </Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  if (choice === "edit-config") {
-    return (
-      <ConfigSetup
-        initialConfig={config}
-        onComplete={(newConfig) => {
-          onConfigUpdate?.(newConfig);
-          setChoice(null);
-        }}
+      <ConfigScreen
+        config={config}
+        onBack={() => setChoice(null)}
+        onConfigUpdate={onConfigUpdate}
       />
     );
   }
