@@ -326,17 +326,43 @@ export default function Dashboard({
 
   const handleDeleteConfirm = async () => {
     try {
+      setDeleteError(null);
       const deleteGuard = evaluateProjectDeleteGuard(currentProject.path);
       if (!deleteGuard.allowed) {
-        const details = deleteGuard.blocks
-          .map(
-            (block) =>
-              `${block.environmentId}: ${block.reason}. ${block.remediation}`
-          )
-          .join("\n");
-        throw new Error(
-          `Cannot delete local app while provider-backed environments still exist.\n${details}`
-        );
+        const environmentIds = Array.from(
+          new Set(deleteGuard.blocks.map((block) => block.environmentId))
+        ).sort((a, b) => a.localeCompare(b));
+        for (const environmentId of environmentIds) {
+          const destroyArgs = [
+            "deployments",
+            "destroy",
+            "--env",
+            environmentId,
+            "--confirm-env",
+            environmentId,
+            "--confirm",
+            `destroy ${environmentId}`,
+          ];
+          if (environmentId === "prod") {
+            destroyArgs.push("--confirm-prod", "destroy prod permanently");
+          }
+          const destroyLogs: string[] = [];
+          const destroyResult = await maybeRunDeploymentsCommand(destroyArgs, {
+            getCwd: () => currentProject.path,
+            writeLine: (line) => {
+              const normalized = line.trim();
+              if (normalized.length > 0) destroyLogs.push(normalized);
+            },
+          });
+          if (!destroyResult.handled || destroyResult.exitCode !== 0) {
+            const details = destroyLogs.slice(-6).join("\n");
+            throw new Error(
+              details.length > 0
+                ? `Failed to destroy environment '${environmentId}' before deleting app.\n${details}`
+                : `Failed to destroy environment '${environmentId}' before deleting app.`
+            );
+          }
+        }
       }
 
       const isDockerized = isDockerizedValue(currentProject.builderAnswers?.dockerize);

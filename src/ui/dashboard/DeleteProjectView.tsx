@@ -58,6 +58,9 @@ export function DeleteProjectView({
         Delete project
       </Text>
       <Text>Permanently delete "{projectName}" and all its files?</Text>
+      <Alert variant="warning" title="AWS cleanup will run first">
+        TenZero will first destroy detected provider-backed environments on AWS, then delete local app files.
+      </Alert>
       <Text dimColor>
         Remote GitHub repo deletion: {deleteRemoteRepoOnDelete ? "enabled" : "disabled"}.
       </Text>

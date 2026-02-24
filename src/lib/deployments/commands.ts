@@ -207,23 +207,27 @@ export async function maybeRunDeploymentsCommand(
   }
   const projectPath = asStringArg(flags, "project") ?? deps.getCwd();
   const releaseConfigResult = deps.loadReleaseConfig(projectPath);
-  if (releaseConfigResult.error) {
-    deps.writeLine(releaseConfigResult.error);
-    return { handled: true, exitCode: 1 };
-  }
-  if (!releaseConfigResult.config) {
-    deps.writeLine(
-      "Deployment blocked: release config not found. Create .tz/release.yaml with version and tagPrefix first."
-    );
-    return { handled: true, exitCode: 1 };
+  if (action !== "destroy") {
+    if (releaseConfigResult.error) {
+      deps.writeLine(releaseConfigResult.error);
+      return { handled: true, exitCode: 1 };
+    }
+    if (!releaseConfigResult.config) {
+      deps.writeLine(
+        "Deployment blocked: release config not found. Create .tz/release.yaml with version and tagPrefix first."
+      );
+      return { handled: true, exitCode: 1 };
+    }
   }
   const adapter = deps.createAdapter(config);
 
   try {
-    await deps.runGitPreflight({
-      projectPath,
-      releaseConfig: releaseConfigResult.config,
-    });
+    if (action !== "destroy") {
+      await deps.runGitPreflight({
+        projectPath,
+        releaseConfig: releaseConfigResult.config,
+      });
+    }
     deps.materializeInfra(projectPath, environmentId, config);
 
     if (action === "plan") {
