@@ -53,7 +53,7 @@ async function consumeStream(
 
 /**
  * Execute a shell command string via sh -c.
- * @example callShell("make cc", { cwd: "/path/to/project" })
+ * @example callShell("npm run build", { cwd: "/path/to/project" })
  */
 export async function callShell(
   command: string,

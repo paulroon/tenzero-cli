@@ -157,9 +157,6 @@ ui:
 dependencies:
   - symfony-cli
   - composer
-  - id: make
-    when:
-      dockerize: "true"
 
 pipeline:
   - type: createProjectDirectory

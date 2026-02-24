@@ -123,18 +123,6 @@ export const DEPENDENCY_CATALOG: Record<string, DependencyCatalogEntry> = {
             "Alternative (legacy): install docker-compose separately if your setup still uses v1.",
         ],
     },
-    make: {
-        id: "make",
-        name: "make",
-        command: "make",
-        checkArgs: ["--version"],
-        instructions: [
-            "Install GNU Make",
-            "",
-            "macOS (Xcode tools): xcode-select --install",
-            "macOS (Homebrew):    brew install make",
-        ],
-    },
     "not-here": {
         id: "not-here",
         name: "not-here",

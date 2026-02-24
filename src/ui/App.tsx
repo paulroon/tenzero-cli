@@ -119,7 +119,9 @@ function AppContent() {
             const isDockerized = isDockerizedValue(
                 currentProject.builderAnswers?.dockerize
             );
-            const hints = isDockerized ? "  (o) open  (s) shell" : "";
+            const hints = isDockerized
+                ? "  (d) delete  (s) shell"
+                : "";
             return `(Esc) back  (e) editor${hints}`;
         }
         return isAtRoot ? "" : "(Esc) back";
