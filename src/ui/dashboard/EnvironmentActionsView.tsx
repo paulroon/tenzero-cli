@@ -15,7 +15,6 @@ type Props = {
   selectedEnvironmentId: string;
   status: string;
   liveUrl?: string;
-  liveUrlSource?: "provider" | "inferred";
   canDestroy: boolean;
   hasInfraConfig: boolean;
   infraTfCount: number;
@@ -51,7 +50,6 @@ export function EnvironmentActionsView({
   selectedEnvironmentId,
   status,
   liveUrl,
-  liveUrlSource,
   canDestroy,
   hasInfraConfig,
   infraTfCount,
@@ -97,7 +95,6 @@ export function EnvironmentActionsView({
       {liveUrl && (
         <Text>
           Live environment URL: {liveUrl}
-          {liveUrlSource === "inferred" ? " (inferred)" : ""}
         </Text>
       )}
       {(lastApplySummary || lastApplyAt || lastReportedAt || lastStatusUpdatedAt) && (

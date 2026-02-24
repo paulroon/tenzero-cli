@@ -90,6 +90,24 @@ function toPlannedChanges(
   }));
 }
 
+async function readProviderOutputs(
+  runner: OpenTofuDockerRunner,
+  projectPath: string,
+  environmentId: string,
+  backend: AwsBackendSettings
+): Promise<Record<string, unknown> | undefined> {
+  try {
+    const values = await runner.runOutputValues({
+      projectPath,
+      environmentId,
+      backend,
+    });
+    return Object.keys(values).length > 0 ? values : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function createAwsDeployAdapter(
   config: TzConfig,
   options?: { runner?: OpenTofuDockerRunner }
@@ -131,14 +149,22 @@ export function createAwsDeployAdapter(
 
     async apply({ projectPath, environmentId }): Promise<ApplyResult> {
       try {
+        const workspacePath = resolveWorkspacePath(projectPath, environmentId);
         const result = await runner.run("apply", {
-          projectPath: resolveWorkspacePath(projectPath, environmentId),
+          projectPath: workspacePath,
           environmentId,
           backend,
         });
+        const providerOutputs = await readProviderOutputs(
+          runner,
+          workspacePath,
+          environmentId,
+          backend
+        );
         return {
           status: "healthy",
           summary: parseApplySummary(result.stdout),
+          providerOutputs,
           logs: result.logs,
         };
       } catch (error) {
@@ -182,16 +208,30 @@ export function createAwsDeployAdapter(
           { allowNonZero: true }
         );
         if (planResult.exitCode === 0) {
+          const providerOutputs = await readProviderOutputs(
+            runner,
+            workspacePath,
+            environmentId,
+            backend
+          );
           return {
             status: "healthy",
             driftDetected: false,
+            providerOutputs,
             logs: [...planResult.logs],
           };
         }
         if (planResult.exitCode === 2) {
+          const providerOutputs = await readProviderOutputs(
+            runner,
+            workspacePath,
+            environmentId,
+            backend
+          );
           return {
             status: "drifted",
             driftDetected: true,
+            providerOutputs,
             logs: [...planResult.logs],
           };
         }

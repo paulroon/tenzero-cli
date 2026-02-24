@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export type OpenTofuAction = "init" | "plan" | "apply" | "destroy" | "show";
+export type OpenTofuAction = "init" | "plan" | "apply" | "destroy" | "show" | "output";
 
 export type AwsBackendSettings = {
   bucket: string;
@@ -43,6 +43,15 @@ type OpenTofuPlanJson = {
     };
   }>;
 };
+
+type OpenTofuOutputJson = Record<
+  string,
+  {
+    value?: unknown;
+    sensitive?: unknown;
+    type?: unknown;
+  }
+>;
 
 type ShellExecutor = (
   cmd: string,
@@ -100,7 +109,9 @@ export function buildOpenTofuDockerArgs(
               "-no-color",
               `-var=tz_environment_id=${input.environmentId}`,
             ]
-          : ["show", "-no-color"];
+          : action === "show"
+            ? ["show", "-no-color"]
+            : ["output", "-no-color"];
   const resolvedTofuArgs = [...tofuArgs, ...extraTofuArgs];
 
   return [
@@ -208,5 +219,27 @@ export class OpenTofuDockerRunner {
       .filter((item): item is OpenTofuPlanResourceChange => item !== null);
 
     return { run, plannedChanges };
+  }
+
+  async runOutputValues(input: OpenTofuRunInput): Promise<Record<string, unknown>> {
+    const output = await this.run("output", input, {
+      extraTofuArgs: ["-json"],
+    });
+    let parsed: OpenTofuOutputJson | null = null;
+    try {
+      parsed = JSON.parse(output.stdout) as OpenTofuOutputJson;
+    } catch {
+      parsed = null;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    const values: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(parsed)) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      if (!Object.prototype.hasOwnProperty.call(entry, "value")) continue;
+      values[key] = entry.value;
+    }
+    return values;
   }
 }

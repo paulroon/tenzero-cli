@@ -138,15 +138,6 @@ function getProjectOpenUrl(projectPath: string, projectType: string): string {
   return `http://localhost:${fallbackPort}`;
 }
 
-function toProjectSlug(input: string): string {
-  const normalized = input
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return normalized.length > 0 ? normalized : "app";
-}
-
 function resolveOpenUrl(project: TzProjectConfig): string {
   if (project.openWith?.type === "browser" && project.openWith.url) {
     return project.openWith.url;
@@ -1137,9 +1128,7 @@ export default function Dashboard({
         typeof appBaseUrlRecord?.value === "string" && appBaseUrlRecord.value.trim().length > 0
           ? appBaseUrlRecord.value.trim()
           : undefined;
-      const inferredLiveUrl = `https://${toProjectSlug(currentProject.name)}-${selectedEnvironmentId}.example.com`;
-      const liveUrl = providerLiveUrl ?? (isEnvironmentDeployed(selectedEnvironmentId) ? inferredLiveUrl : undefined);
-      const liveUrlSource = providerLiveUrl ? "provider" : liveUrl ? "inferred" : undefined;
+      const liveUrl = providerLiveUrl;
       const resolvedOutputs = Object.values(envOutputs)
         .filter((record) => record.source === "providerOutput" || record.key === "APP_BASE_URL")
         .slice(0, 8)
@@ -1162,7 +1151,6 @@ export default function Dashboard({
           selectedEnvironmentId={selectedEnvironmentId}
           status={status}
           liveUrl={liveUrl}
-          liveUrlSource={liveUrlSource}
           canDestroy={canDestroy}
           hasInfraConfig={hasInfraConfig}
           infraTfCount={infraConfigReadiness?.tfFiles.length ?? 0}

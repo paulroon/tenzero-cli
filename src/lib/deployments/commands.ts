@@ -1,6 +1,13 @@
 import { cwd } from "node:process";
-import { loadConfig, loadProjectReleaseConfigWithError, type TzConfig } from "@/lib/config";
+import {
+  loadConfig,
+  loadProjectBuilderConfig,
+  loadProjectReleaseConfigWithError,
+  type TzConfig,
+} from "@/lib/config";
+import { loadProjectConfig } from "@/lib/config/project";
 import { createAwsDeployAdapter } from "@/lib/deployments/awsAdapter";
+import { persistResolvedEnvironmentOutputs } from "@/lib/deployments/capabilityPlanner";
 import {
   materializeInfraForEnvironment,
   type MaterializeInfraResult,
@@ -160,6 +167,51 @@ function writeReportRemediation(
   }
 }
 
+function formatOutputValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "undefined") return "(empty)";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "(unserializable)";
+  }
+}
+
+function persistProviderOutputs(
+  projectPath: string,
+  environmentId: string,
+  providerOutputs: Record<string, unknown>,
+  writeLine: (text: string) => void
+): void {
+  if (Object.keys(providerOutputs).length === 0) return;
+  const project = loadProjectConfig(projectPath);
+  if (!project) return;
+  const template = loadProjectBuilderConfig(project.type);
+  const environment = template?.infra?.environments.find((entry) => entry.id === environmentId);
+  if (!environment) return;
+  try {
+    const outputs = persistResolvedEnvironmentOutputs({
+      projectPath,
+      environment,
+      providerOutputs,
+    });
+    if (outputs.length === 0) return;
+    writeLine("Runtime outputs:");
+    for (const output of outputs) {
+      if (output.sensitive === true && output.key !== "APP_BASE_URL") {
+        writeLine(`- ${output.key}: (sensitive)`);
+        continue;
+      }
+      writeLine(`- ${output.key}: ${formatOutputValue(output.value)}`);
+    }
+  } catch (error) {
+    writeLine(
+      `Warning: unable to persist runtime outputs for '${environmentId}': ${error instanceof Error ? error.message : "unknown error"}`
+    );
+  }
+}
+
 export async function maybeRunDeploymentsCommand(
   argv: string[],
   overrides?: Partial<DeploymentsCommandDeps>
@@ -272,6 +324,9 @@ export async function maybeRunDeploymentsCommand(
         confirmDriftForProd: flags["confirm-drift-prod"] === true,
       });
       writeApplySummary(deps.writeLine, result);
+      if (result.providerOutputs) {
+        persistProviderOutputs(projectPath, environmentId, result.providerOutputs, deps.writeLine);
+      }
       if (hasErrors(result)) {
         writeErrors(deps.writeLine, result.errors ?? []);
         return { handled: true, exitCode: 1 };
@@ -315,6 +370,14 @@ export async function maybeRunDeploymentsCommand(
           onCycle: (cycle, cycleResult) => {
             deps.writeLine(`Refresh cycle ${cycle}:`);
             writeReportSummary(deps.writeLine, cycleResult);
+            if (cycleResult.providerOutputs) {
+              persistProviderOutputs(
+                projectPath,
+                environmentId,
+                cycleResult.providerOutputs,
+                deps.writeLine
+              );
+            }
             writeReportRemediation(deps.writeLine, environmentId, cycleResult);
           },
         }
@@ -330,6 +393,9 @@ export async function maybeRunDeploymentsCommand(
 
     const result = await deps.runReport(config, projectPath, environmentId, adapter);
     writeReportSummary(deps.writeLine, result);
+    if (result.providerOutputs) {
+      persistProviderOutputs(projectPath, environmentId, result.providerOutputs, deps.writeLine);
+    }
     if (hasErrors(result)) {
       writeErrors(deps.writeLine, result.errors ?? []);
       return { handled: true, exitCode: 1 };

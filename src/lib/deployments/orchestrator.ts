@@ -44,6 +44,7 @@ export type PlanResult = {
 export type ApplyResult = {
   status: EnvironmentStatus;
   summary: DeploymentRunSummary;
+  providerOutputs?: Record<string, unknown>;
   warnings?: AdapterWarning[];
   errors?: AdapterError[];
   logs?: string[];
@@ -60,6 +61,7 @@ export type DestroyResult = {
 export type ReportResult = {
   status: EnvironmentStatus;
   driftDetected: boolean;
+  providerOutputs?: Record<string, unknown>;
   warnings?: AdapterWarning[];
   errors?: AdapterError[];
   logs?: string[];
