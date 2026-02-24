@@ -38,7 +38,7 @@ function parseGitHubRepoFromOrigin(originUrl: string): RepoRef | null {
 }
 
 function isConfiguredVariableValue(value: string | undefined): boolean {
-  return !!value && value.trim().length > 0 && value.trim() !== "__SET_ME__";
+  return !!value && value.trim().length > 0;
 }
 
 async function getRepoVariableValue(
@@ -186,17 +186,22 @@ export async function bootstrapGithubRepoVariables(args: {
   const inferredAccountId =
     (isConfiguredVariableValue(existingValues.AWS_ACCOUNT_ID) ? existingValues.AWS_ACCOUNT_ID : undefined) ||
     (await resolveAwsAccountId(args.projectPath));
-  const defaults: Record<string, string> = {
-    AWS_REGION: inferredRegion || "__SET_ME__",
-    AWS_ACCOUNT_ID: inferredAccountId || "__SET_ME__",
+  const resolvedValues: Partial<Record<(typeof REQUIRED_RELEASE_REPO_VARIABLES)[number], string>> = {
+    AWS_REGION: inferredRegion,
+    AWS_ACCOUNT_ID: inferredAccountId,
     AWS_OIDC_ROLE_ARN:
-      existingValues.AWS_OIDC_ROLE_ARN ||
-      args.oidcRoleArn?.trim() ||
-      "__SET_ME__",
-    ECR_REPOSITORY: existingValues.ECR_REPOSITORY || `tz-${projectSlug}-prod`,
+      (isConfiguredVariableValue(existingValues.AWS_OIDC_ROLE_ARN)
+        ? existingValues.AWS_OIDC_ROLE_ARN
+        : undefined) || args.oidcRoleArn?.trim(),
+    ECR_REPOSITORY:
+      (isConfiguredVariableValue(existingValues.ECR_REPOSITORY)
+        ? existingValues.ECR_REPOSITORY
+        : undefined) || `tz-${projectSlug}-prod`,
   };
   try {
-    for (const [name, value] of Object.entries(defaults)) {
+    for (const name of REQUIRED_RELEASE_REPO_VARIABLES) {
+      const value = resolvedValues[name];
+      if (!isConfiguredVariableValue(value)) continue;
       await upsertVariable({ token, repo, name, value });
     }
   } catch (error) {

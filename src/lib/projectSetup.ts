@@ -131,34 +131,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          missing=0
+          missing=()
           for key in AWS_REGION AWS_ACCOUNT_ID AWS_OIDC_ROLE_ARN ECR_REPOSITORY; do
             value="\${!key:-}"
-            if [ -z "$value" ] || [ "$value" = "__SET_ME__" ]; then
-              echo "Missing repo variable: $key"
-              missing=1
+            if [ -z "$value" ]; then
+              missing+=("$key")
             fi
           done
-          if [ "$missing" -eq 1 ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "release workflow skipped; configure repository variables first." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          if [ "\${#missing[@]}" -gt 0 ]; then
+            echo "Missing repo variables: \${missing[*]}"
+            {
+              echo "## Release workflow configuration error"
+              echo ""
+              echo "Missing required repository variables:"
+              for key in "\${missing[@]}"; do
+                echo "- $key"
+              done
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
 
       - name: Configure AWS credentials
-        if: steps.vars.outputs.enabled == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: \${{ env.AWS_OIDC_ROLE_ARN }}
           aws-region: \${{ env.AWS_REGION }}
 
       - name: Login to ECR
-        if: steps.vars.outputs.enabled == 'true'
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push release image
-        if: steps.vars.outputs.enabled == 'true'
         id: push
         shell: bash
         run: |

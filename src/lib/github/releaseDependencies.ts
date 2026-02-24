@@ -68,7 +68,7 @@ async function getRepoVariable(
   if (!response.ok) return undefined;
   const payload = (await response.json()) as { value?: string };
   const value = payload.value?.trim();
-  if (!value || value === "__SET_ME__") return undefined;
+  if (!value) return undefined;
   return value;
 }
 

@@ -111,7 +111,7 @@ async function getRepoVariable(
   }
   const payload = (await response.json()) as { value?: string };
   const value = payload.value?.trim();
-  if (!value || value === "__SET_ME__") return undefined;
+  if (!value) return undefined;
   return value;
 }
 
@@ -176,7 +176,7 @@ export async function resolveReleaseImageForTag(args: {
     const validateStep = allSteps.find((step) => step.name === "Validate release vars");
     const varsHint =
       validateStep?.conclusion === "success"
-        ? "Release workflow likely skipped image publish because required repo variables are unset (__SET_ME__). Configure AWS_REGION, AWS_ACCOUNT_ID, AWS_OIDC_ROLE_ARN, and ECR_REPOSITORY."
+        ? "Release workflow likely skipped image publish because required repo variables are missing. Configure AWS_REGION, AWS_ACCOUNT_ID, AWS_OIDC_ROLE_ARN, and ECR_REPOSITORY."
         : "Release workflow did not publish an image for this tag.";
     return {
       ok: false,
