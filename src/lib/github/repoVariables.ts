@@ -34,10 +34,10 @@ async function upsertVariable(args: {
   name: string;
   value: string;
 }): Promise<void> {
-  const response = await fetch(
+  const updateResponse = await fetch(
     `https://api.github.com/repos/${args.repo.owner}/${args.repo.repo}/actions/variables/${args.name}`,
     {
-      method: "PUT",
+      method: "PATCH",
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${args.token}`,
@@ -50,10 +50,33 @@ async function upsertVariable(args: {
       }),
     }
   );
-  if (response.status >= 200 && response.status < 300) return;
-  const body = await response.text();
+  if (updateResponse.status >= 200 && updateResponse.status < 300) return;
+  if (updateResponse.status === 404) {
+    const createResponse = await fetch(
+      `https://api.github.com/repos/${args.repo.owner}/${args.repo.repo}/actions/variables`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${args.token}`,
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: args.name,
+          value: args.value,
+        }),
+      }
+    );
+    if (createResponse.status >= 200 && createResponse.status < 300) return;
+    const createBody = await createResponse.text();
+    throw new Error(
+      `Failed to create GitHub repo variable '${args.name}' (${createResponse.status}): ${createBody || createResponse.statusText}`
+    );
+  }
+  const updateBody = await updateResponse.text();
   throw new Error(
-    `Failed to set GitHub repo variable '${args.name}' (${response.status}): ${body || response.statusText}`
+    `Failed to update GitHub repo variable '${args.name}' (${updateResponse.status}): ${updateBody || updateResponse.statusText}`
   );
 }
 
@@ -104,8 +127,18 @@ export async function bootstrapGithubRepoVariables(args: {
     AWS_OIDC_ROLE_ARN: "__SET_ME__",
     ECR_REPOSITORY: `tz-${projectSlug}-prod`,
   };
-  for (const [name, value] of Object.entries(defaults)) {
-    await upsertVariable({ token, repo, name, value });
+  try {
+    for (const [name, value] of Object.entries(defaults)) {
+      await upsertVariable({ token, repo, name, value });
+    }
+  } catch (error) {
+    return {
+      configured: false,
+      message:
+        error instanceof Error
+          ? `Failed GitHub variable bootstrap: ${error.message}`
+          : "Failed GitHub variable bootstrap.",
+    };
   }
   return {
     configured: true,
