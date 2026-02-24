@@ -128,6 +128,14 @@ export default function DeploymentsScreen({
       color: backend?.bucket ? "green" : "red",
     },
     {
+      label: "OIDC role",
+      value:
+        aws?.oidcRoleArn && aws.oidcRoleArn.trim().length > 0
+          ? aws.oidcRoleArn
+          : "Not configured",
+      color: aws?.oidcRoleArn && aws.oidcRoleArn.trim().length > 0 ? "green" : "red",
+    },
+    {
       label: "Gate status",
       value: gate.allowed ? "Ready" : "Blocked",
       color: gate.allowed ? "green" : "red",
