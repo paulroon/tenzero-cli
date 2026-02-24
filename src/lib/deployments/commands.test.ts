@@ -306,4 +306,76 @@ describe("deployments commands", () => {
     expect(result.exitCode).toBe(1);
     expect(lines.join("\n")).toContain("commit or stash changes");
   });
+
+  test("blocks deployment when deploy template validation fails", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(["deployments", "plan", "--env", "prod"], {
+      loadUserConfig: () => readyConfig(),
+      loadReleaseConfig: () => ({
+        config: { version: "1.0.0", tagPrefix: "v" },
+        exists: true,
+      }),
+      evaluateGate: () => ({ allowed: true, issues: [] }),
+      assertMode: () => undefined,
+      createAdapter: () => ({} as never),
+      runGitPreflight: async () => undefined,
+      validateDeployTemplateForProject: () => {
+        throw new Error("Deployment blocked: template deploy config is invalid.");
+      },
+      materializeInfra: () => ({ directoryPath: "/tmp/.tz/infra/prod", filePaths: [] }),
+      writeLine: (line) => lines.push(line),
+    });
+    expect(result.exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("template deploy config is invalid");
+  });
+
+  test("blocks deployment when post-interpolation validation fails", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(["deployments", "plan", "--env", "prod"], {
+      loadUserConfig: () => readyConfig(),
+      loadReleaseConfig: () => ({
+        config: { version: "1.0.0", tagPrefix: "v" },
+        exists: true,
+      }),
+      evaluateGate: () => ({ allowed: true, issues: [] }),
+      assertMode: () => undefined,
+      createAdapter: () => ({} as never),
+      runGitPreflight: async () => undefined,
+      validateDeployTemplateForProject: () => undefined,
+      materializeInfra: () => ({ directoryPath: "/tmp/.tz/infra/prod", filePaths: [] }),
+      validatePostInterpolationArtifacts: () => {
+        throw new Error("Deployment blocked: unresolved interpolation token detected.");
+      },
+      writeLine: (line) => lines.push(line),
+    });
+    expect(result.exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("unresolved interpolation token");
+  });
+
+  test("blocks apply when post-deploy output validation fails", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(["deployments", "apply", "--env", "test"], {
+      ...withMaterialize({
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({ allowed: true, issues: [] }),
+        assertMode: () => undefined,
+        createAdapter: () => ({} as never),
+        runReport: async () => ({
+          status: "healthy",
+          driftDetected: false,
+        }),
+        runApply: async () => ({
+          status: "healthy",
+          summary: { add: 1, change: 0, destroy: 0 },
+          providerOutputs: { APP_BASE_URL: 123 },
+        }),
+        validatePostDeployOutputs: () => {
+          throw new Error("Deployment blocked: output 'APP_BASE_URL' has invalid type.");
+        },
+        writeLine: (line) => lines.push(line),
+      }),
+    });
+    expect(result.exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("output 'APP_BASE_URL' has invalid type");
+  });
 });

@@ -1,5 +1,8 @@
 import { cwd } from "node:process";
+import { readFileSync } from "node:fs";
 import {
+  listProjectConfigs,
+  loadDeployTemplateConfigWithError,
   loadConfig,
   loadProjectBuilderConfig,
   loadProjectReleaseConfigWithError,
@@ -51,6 +54,20 @@ type DeploymentsCommandDeps = {
     environmentId: string,
     config: TzConfig
   ) => MaterializeInfraResult;
+  validatePostInterpolationArtifacts: (
+    result: MaterializeInfraResult,
+    writeLine: (text: string) => void
+  ) => void;
+  validatePostDeployOutputs: (args: {
+    projectPath: string;
+    environmentId: string;
+    providerOutputs: Record<string, unknown>;
+    writeLine: (text: string) => void;
+  }) => void;
+  validateDeployTemplateForProject: (
+    projectPath: string,
+    writeLine: (text: string) => void
+  ) => void;
   getCwd: () => string;
   writeLine: (text: string) => void;
 };
@@ -71,6 +88,89 @@ const defaultDeps: DeploymentsCommandDeps = {
     materializeInfraForEnvironment(projectPath, environmentId, {
       backendRegion: config.integrations?.aws?.backend?.region,
     }),
+  validatePostInterpolationArtifacts: (
+    result: MaterializeInfraResult,
+    writeLine: (text: string) => void
+  ) => {
+    const tfFiles = result.filePaths.filter((path) => path.endsWith(".tf"));
+    for (const filePath of tfFiles) {
+      const contents = readFileSync(filePath, "utf-8");
+      if (contents.includes("{{") || contents.includes("}}")) {
+        throw new Error(
+          `Deployment blocked: unresolved interpolation token detected in '${filePath}'.`
+        );
+      }
+    }
+    if (tfFiles.length > 0) {
+      writeLine("Post-interpolation validation passed.");
+    }
+  },
+  validatePostDeployOutputs: ({
+    projectPath,
+    environmentId,
+    providerOutputs,
+    writeLine,
+  }: {
+    projectPath: string;
+    environmentId: string;
+    providerOutputs: Record<string, unknown>;
+    writeLine: (text: string) => void;
+  }) => {
+    const project = loadProjectConfig(projectPath);
+    if (!project) return;
+    const templateMeta = listProjectConfigs().find((entry) => entry.id === project.type);
+    if (!templateMeta) return;
+    const result = loadDeployTemplateConfigWithError(templateMeta.path);
+    if (!result.exists || !result.config) return;
+
+    const env = result.config.environments.find((item) => item.id === environmentId);
+    if (!env) {
+      throw new Error(
+        `Deployment blocked: environment '${environmentId}' is not defined in deploy.yaml for template '${project.type}'.`
+      );
+    }
+
+    const assertType = (type: string, value: unknown): boolean => {
+      if (type === "string" || type === "secret_ref") return typeof value === "string";
+      if (type === "number") return typeof value === "number";
+      if (type === "boolean") return typeof value === "boolean";
+      if (type === "json") return typeof value !== "undefined";
+      return true;
+    };
+
+    for (const output of env.outputs) {
+      const hasProviderValue = Object.prototype.hasOwnProperty.call(providerOutputs, output.key);
+      if (!hasProviderValue) {
+        if (output.required && typeof output.default === "undefined") {
+          throw new Error(
+            `Deployment blocked: required output '${output.key}' is missing for '${environmentId}'.`
+          );
+        }
+        continue;
+      }
+      const value = providerOutputs[output.key];
+      if (!assertType(output.type, value)) {
+        throw new Error(
+          `Deployment blocked: output '${output.key}' has invalid type for '${environmentId}'. Expected '${output.type}'.`
+        );
+      }
+    }
+    writeLine(`Post-deploy output validation passed for '${environmentId}'.`);
+  },
+  validateDeployTemplateForProject: (projectPath: string, writeLine: (text: string) => void) => {
+    const project = loadProjectConfig(projectPath);
+    if (!project) return;
+    const templateMeta = listProjectConfigs().find((entry) => entry.id === project.type);
+    if (!templateMeta) return;
+    const result = loadDeployTemplateConfigWithError(templateMeta.path);
+    if (!result.exists) return;
+    if (!result.config) {
+      throw new Error(
+        `Deployment blocked: template deploy config is invalid for '${project.type}'. ${result.error ?? "Fix deploy.yaml and retry."}`
+      );
+    }
+    writeLine(`Deploy contract validated for template '${project.type}'.`);
+  },
   getCwd: () => cwd(),
   writeLine: (text: string) => console.log(text),
 };
@@ -286,8 +386,10 @@ export async function maybeRunDeploymentsCommand(
         projectPath,
         releaseConfig: releaseConfigResult.config,
       });
+      deps.validateDeployTemplateForProject(projectPath, deps.writeLine);
     }
-    deps.materializeInfra(projectPath, environmentId, config);
+    const materialized = deps.materializeInfra(projectPath, environmentId, config);
+    deps.validatePostInterpolationArtifacts(materialized, deps.writeLine);
 
     if (action === "plan") {
       deps.writeLine(`Starting plan for '${environmentId}'...`);
@@ -331,6 +433,12 @@ export async function maybeRunDeploymentsCommand(
         confirmDriftForProd: flags["confirm-drift-prod"] === true,
       });
       writeApplySummary(deps.writeLine, result);
+      deps.validatePostDeployOutputs({
+        projectPath,
+        environmentId,
+        providerOutputs: result.providerOutputs ?? {},
+        writeLine: deps.writeLine,
+      });
       if (result.providerOutputs) {
         persistProviderOutputs(projectPath, environmentId, result.providerOutputs, deps.writeLine);
       }
@@ -377,6 +485,12 @@ export async function maybeRunDeploymentsCommand(
           onCycle: (cycle, cycleResult) => {
             deps.writeLine(`Refresh cycle ${cycle}:`);
             writeReportSummary(deps.writeLine, cycleResult);
+            deps.validatePostDeployOutputs({
+              projectPath,
+              environmentId,
+              providerOutputs: cycleResult.providerOutputs ?? {},
+              writeLine: deps.writeLine,
+            });
             if (cycleResult.providerOutputs) {
               persistProviderOutputs(
                 projectPath,
@@ -400,6 +514,12 @@ export async function maybeRunDeploymentsCommand(
 
     const result = await deps.runReport(config, projectPath, environmentId, adapter);
     writeReportSummary(deps.writeLine, result);
+    deps.validatePostDeployOutputs({
+      projectPath,
+      environmentId,
+      providerOutputs: result.providerOutputs ?? {},
+      writeLine: deps.writeLine,
+    });
     if (result.providerOutputs) {
       persistProviderOutputs(projectPath, environmentId, result.providerOutputs, deps.writeLine);
     }
