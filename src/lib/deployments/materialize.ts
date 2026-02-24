@@ -144,6 +144,10 @@ terraform {
       source  = "hashicorp/random"
       version = ">= 3.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = ">= 0.12"
+    }
   }
 }
 
@@ -185,6 +189,50 @@ resource "aws_iam_role_policy_attachment" "apprunner_ecr_access" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
 }
 
+resource "aws_iam_role" "apprunner_instance" {
+  count = local.tz_enable_app_runner ? 1 : 0
+  name  = "tz-\${local.tz_project_slug}-\${local.tz_environment_id}-apprunner-instance"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "tasks.apprunner.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "apprunner_instance_secrets" {
+  count = local.tz_enable_app_runner ? 1 : 0
+  name  = "tz-\${local.tz_project_slug}-\${local.tz_environment_id}-apprunner-secrets"
+  role  = aws_iam_role.apprunner_instance[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# IAM role trust/policy propagation is eventually consistent in AWS.
+# A short delay prevents first-apply App Runner CreateService failures.
+resource "time_sleep" "apprunner_access_role_propagation" {
+  count           = local.tz_enable_app_runner ? 1 : 0
+  depends_on      = [aws_iam_role_policy_attachment.apprunner_ecr_access, aws_iam_role_policy.apprunner_instance_secrets]
+  create_duration = "20s"
+}
+
 resource "aws_apprunner_auto_scaling_configuration_version" "app" {
   count             = local.tz_enable_app_runner ? 1 : 0
   auto_scaling_configuration_name = "tz-\${local.tz_project_slug}-\${local.tz_environment_id}"
@@ -220,6 +268,7 @@ resource "aws_apprunner_service" "app" {
   }
 
   instance_configuration {
+    instance_role_arn = aws_iam_role.apprunner_instance[0].arn
     cpu    = tostring(try(local.tz_constraints.appRunnerCpu, "1024"))
     memory = tostring(try(local.tz_constraints.appRunnerMemory, "2048"))
   }
@@ -244,7 +293,7 @@ resource "aws_apprunner_service" "app" {
 
   auto_scaling_configuration_arn = aws_apprunner_auto_scaling_configuration_version.app[0].arn
 
-  depends_on = [aws_iam_role_policy_attachment.apprunner_ecr_access]
+  depends_on = [time_sleep.apprunner_access_role_propagation]
 }` : ""}
 
 ${hasEnvConfig ? `resource "aws_ssm_parameter" "app_base_url" {
