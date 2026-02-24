@@ -848,6 +848,7 @@ export default function Dashboard({
     let resolvedImage = await resolveReleaseImageForTag({
       projectPath: currentProject.path,
       tag: result.tag,
+      preferredRunUrl: monitorResult.runUrl,
     });
     if (
       !resolvedImage.ok &&
@@ -858,6 +859,7 @@ export default function Dashboard({
       resolvedImage = await resolveReleaseImageForTag({
         projectPath: currentProject.path,
         tag: result.tag,
+        preferredRunUrl: monitorResult.runUrl,
       });
     }
     if (!resolvedImage.ok) {
