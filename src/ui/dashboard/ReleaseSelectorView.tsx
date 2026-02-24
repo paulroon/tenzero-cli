@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { Select, Spinner, TextInput } from "@inkjs/ui";
+import { Alert, Select, Spinner, TextInput } from "@inkjs/ui";
 import type { ReleaseSelection } from "@/ui/dashboard/types";
 
 type Props = {
@@ -10,6 +10,7 @@ type Props = {
   currentSelection?: ReleaseSelection;
   availableReleaseTags: string[];
   suggestedReleaseTag: string;
+  error?: string | null;
   onCreateReleaseSubmit: (value: string) => void;
   onStartCreate: () => void;
   onClear: () => void;
@@ -24,6 +25,7 @@ export function ReleaseSelectorView({
   currentSelection,
   availableReleaseTags,
   suggestedReleaseTag,
+  error,
   onCreateReleaseSubmit,
   onStartCreate,
   onClear,
@@ -48,7 +50,9 @@ export function ReleaseSelectorView({
           Create release ({environmentId})
         </Text>
         <Text>Suggestion uses semver patch bump with rollover every 10 patches.</Text>
+        {error ? <Alert variant="error">{error}</Alert> : null}
         <TextInput
+          key={suggestedReleaseTag}
           defaultValue={suggestedReleaseTag}
           placeholder="v1.2.3"
           onSubmit={onCreateReleaseSubmit}

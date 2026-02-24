@@ -910,8 +910,9 @@ export default function Dashboard({
         currentSelection={currentSelection}
         availableReleaseTags={availableReleaseTags}
         suggestedReleaseTag={suggestedReleaseTag}
+        error={deploymentError}
         onCreateReleaseSubmit={(value) => {
-          const requestedTag = value.trim();
+          const requestedTag = value.trim() || suggestedReleaseTag.trim();
           if (!requestedTag) {
             setDeploymentError("Release value cannot be blank.");
             return;
@@ -925,7 +926,10 @@ export default function Dashboard({
             await handleCreateReleaseTagSubmit(targetEnvironmentId, requestedTag);
           })();
         }}
-        onStartCreate={() => setCreateReleaseEntry(true)}
+        onStartCreate={() => {
+          setDeploymentError(null);
+          setCreateReleaseEntry(true);
+        }}
         onClear={() => {
           setEnvironmentReleaseSelection(editReleaseEnvironmentId, {});
           closeReleaseSelector();
