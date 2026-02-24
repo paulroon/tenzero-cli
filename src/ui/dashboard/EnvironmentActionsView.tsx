@@ -14,6 +14,8 @@ function getStepStatusBadge(status: DeploymentStep["status"]): string {
 type Props = {
   selectedEnvironmentId: string;
   status: string;
+  liveUrl?: string;
+  liveUrlSource?: "provider" | "inferred";
   canDestroy: boolean;
   hasInfraConfig: boolean;
   infraTfCount: number;
@@ -21,6 +23,15 @@ type Props = {
   releaseTag?: string;
   imageOverride?: string;
   imageDigest?: string;
+  lastApplySummary?: {
+    add?: number;
+    change?: number;
+    destroy?: number;
+  };
+  lastApplyAt?: string;
+  lastReportedAt?: string;
+  lastStatusUpdatedAt?: string;
+  resolvedOutputs?: Array<{ key: string; value: string }>;
   deploymentNotice: string | null;
   deploymentInProgress: boolean;
   deploymentSteps: DeploymentStep[];
@@ -39,6 +50,8 @@ type Props = {
 export function EnvironmentActionsView({
   selectedEnvironmentId,
   status,
+  liveUrl,
+  liveUrlSource,
   canDestroy,
   hasInfraConfig,
   infraTfCount,
@@ -46,6 +59,11 @@ export function EnvironmentActionsView({
   releaseTag,
   imageOverride,
   imageDigest,
+  lastApplySummary,
+  lastApplyAt,
+  lastReportedAt,
+  lastStatusUpdatedAt,
+  resolvedOutputs,
   deploymentNotice,
   deploymentInProgress,
   deploymentSteps,
@@ -76,6 +94,37 @@ export function EnvironmentActionsView({
       <Text>Release: {releaseTag ?? "(not selected)"}</Text>
       <Text dimColor>Resolved release reference: {imageOverride ?? "(not selected)"}</Text>
       {imageDigest && <Text dimColor>Release proof: {imageDigest}</Text>}
+      {liveUrl && (
+        <Text>
+          Live environment URL: {liveUrl}
+          {liveUrlSource === "inferred" ? " (inferred)" : ""}
+        </Text>
+      )}
+      {(lastApplySummary || lastApplyAt || lastReportedAt || lastStatusUpdatedAt) && (
+        <Box flexDirection="column">
+          <Text dimColor>Running now:</Text>
+          {lastApplySummary && (
+            <Text dimColor>
+              Last apply resources: add={lastApplySummary.add ?? 0}, change={lastApplySummary.change ?? 0}, destroy={lastApplySummary.destroy ?? 0}
+            </Text>
+          )}
+          {lastApplyAt && <Text dimColor>Last apply completed: {new Date(lastApplyAt).toLocaleString()}</Text>}
+          {lastReportedAt && <Text dimColor>Last report: {new Date(lastReportedAt).toLocaleString()}</Text>}
+          {lastStatusUpdatedAt && (
+            <Text dimColor>Status updated: {new Date(lastStatusUpdatedAt).toLocaleString()}</Text>
+          )}
+        </Box>
+      )}
+      {resolvedOutputs && resolvedOutputs.length > 0 && (
+        <Box flexDirection="column">
+          <Text dimColor>Resolved environment outputs:</Text>
+          {resolvedOutputs.map((entry) => (
+            <Text key={entry.key} dimColor>
+              - {entry.key}: {entry.value}
+            </Text>
+          ))}
+        </Box>
+      )}
       {deploymentNotice && (
         <Alert variant="success" title="Completed">
           {deploymentNotice}

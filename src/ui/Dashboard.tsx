@@ -138,6 +138,15 @@ function getProjectOpenUrl(projectPath: string, projectType: string): string {
   return `http://localhost:${fallbackPort}`;
 }
 
+function toProjectSlug(input: string): string {
+  const normalized = input
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized.length > 0 ? normalized : "app";
+}
+
 function resolveOpenUrl(project: TzProjectConfig): string {
   if (project.openWith?.type === "browser" && project.openWith.url) {
     return project.openWith.url;
@@ -1113,10 +1122,47 @@ export default function Dashboard({
       const firstTfPath = infraConfigReadiness?.tfFiles[0];
       const releaseSelection =
         projectStateConfig?.releaseState?.environments?.[selectedEnvironmentId];
+      const envState = projectStateConfig?.deploymentState?.environments?.[selectedEnvironmentId];
+      const envOutputs = projectStateConfig?.environmentOutputs?.[selectedEnvironmentId] ?? {};
+      const lastSuccessfulApply = (projectStateConfig?.deploymentRunHistory ?? [])
+        .filter(
+          (run) =>
+            run.environmentId === selectedEnvironmentId &&
+            run.action === "apply" &&
+            run.status === "success"
+        )
+        .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt))[0];
+      const appBaseUrlRecord = envOutputs.APP_BASE_URL;
+      const providerLiveUrl =
+        typeof appBaseUrlRecord?.value === "string" && appBaseUrlRecord.value.trim().length > 0
+          ? appBaseUrlRecord.value.trim()
+          : undefined;
+      const inferredLiveUrl = `https://${toProjectSlug(currentProject.name)}-${selectedEnvironmentId}.example.com`;
+      const liveUrl = providerLiveUrl ?? (isEnvironmentDeployed(selectedEnvironmentId) ? inferredLiveUrl : undefined);
+      const liveUrlSource = providerLiveUrl ? "provider" : liveUrl ? "inferred" : undefined;
+      const resolvedOutputs = Object.values(envOutputs)
+        .filter((record) => record.source === "providerOutput" || record.key === "APP_BASE_URL")
+        .slice(0, 8)
+        .map((record) => {
+          if (record.secretRef && record.secretRef.length > 0) {
+            return { key: record.key, value: `secret ref: ${record.secretRef}` };
+          }
+          if (record.sensitive === true && record.key !== "APP_BASE_URL") {
+            return { key: record.key, value: "(sensitive)" };
+          }
+          if (typeof record.value === "string") return { key: record.key, value: record.value };
+          if (typeof record.value === "number" || typeof record.value === "boolean") {
+            return { key: record.key, value: String(record.value) };
+          }
+          if (typeof record.value === "undefined") return { key: record.key, value: "(empty)" };
+          return { key: record.key, value: JSON.stringify(record.value) };
+        });
       return (
         <EnvironmentActionsView
           selectedEnvironmentId={selectedEnvironmentId}
           status={status}
+          liveUrl={liveUrl}
+          liveUrlSource={liveUrlSource}
           canDestroy={canDestroy}
           hasInfraConfig={hasInfraConfig}
           infraTfCount={infraConfigReadiness?.tfFiles.length ?? 0}
@@ -1124,6 +1170,11 @@ export default function Dashboard({
           releaseTag={releaseSelection?.selectedReleaseTag}
           imageOverride={releaseSelection?.selectedImageRef}
           imageDigest={releaseSelection?.selectedImageDigest}
+          lastApplySummary={lastSuccessfulApply?.summary}
+          lastApplyAt={lastSuccessfulApply?.finishedAt}
+          lastReportedAt={envState?.lastReportedAt}
+          lastStatusUpdatedAt={envState?.lastStatusUpdatedAt}
+          resolvedOutputs={resolvedOutputs}
           deploymentNotice={deploymentNotice}
           deploymentInProgress={deploymentInProgress}
           deploymentSteps={deploymentSteps}
