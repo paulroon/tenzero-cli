@@ -2,32 +2,53 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { saveProjectConfig } from "@/lib/config/project";
 import { getUserConfigsDir } from "@/lib/paths";
 import { materializeInfraForEnvironment } from "@/lib/deployments/materialize";
 
 const tmpRoots: string[] = [];
-const TEST_TEMPLATE_ID = "nextjs";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const repoRoot = join(__dirname, "..", "..", "..", "..");
-const sourceTemplatePath = join(repoRoot, "tz-project-config", "nextjs", "config.yaml");
+const TEST_TEMPLATE_ID = "other";
 const fixtureTemplateDir = join(getUserConfigsDir(), TEST_TEMPLATE_ID);
 const fixtureTemplatePath = join(fixtureTemplateDir, "config.yaml");
 let existingTemplateBackupDir: string | null = null;
+let existingTemplateBackupRoot: string | null = null;
+const fixtureSource = `label: Test Template
+type: other
+version: "1"
+pipeline:
+  - type: run
+    command: "echo noop"
+infra:
+  version: "1"
+  environments:
+    - id: prod
+      label: Production
+      capabilities:
+        - appRuntime
+        - envConfig
+        - postgres
+      constraints:
+        enableAppRunner: true
+      outputs:
+        - key: APP_BASE_URL
+          type: string
+        - key: DATABASE_URL
+          type: secret_ref
+        - key: NEXTAUTH_SECRET
+          type: secret_ref
+`;
 
 beforeEach(() => {
-  const fixtureSource = readFileSync(sourceTemplatePath, "utf-8");
   if (existsSync(fixtureTemplateDir)) {
     const backupRoot = mkdtempSync(join(tmpdir(), "tz-materialize-template-backup-"));
     const backupDir = join(backupRoot, TEST_TEMPLATE_ID);
     cpSync(fixtureTemplateDir, backupDir, { recursive: true });
     existingTemplateBackupDir = backupDir;
-    tmpRoots.push(backupRoot);
+    existingTemplateBackupRoot = backupRoot;
     rmSync(fixtureTemplateDir, { recursive: true, force: true });
   } else {
     existingTemplateBackupDir = null;
+    existingTemplateBackupRoot = null;
   }
   mkdirSync(fixtureTemplateDir, { recursive: true });
   writeFileSync(fixtureTemplatePath, fixtureSource, "utf-8");
@@ -40,18 +61,22 @@ function createRoot(): string {
 }
 
 afterEach(() => {
-  while (tmpRoots.length > 0) {
-    const root = tmpRoots.pop();
-    if (!root) continue;
-    rmSync(root, { recursive: true, force: true });
-  }
   if (existsSync(fixtureTemplateDir)) {
     rmSync(fixtureTemplateDir, { recursive: true, force: true });
   }
   if (existingTemplateBackupDir && existsSync(existingTemplateBackupDir)) {
     mkdirSync(dirname(fixtureTemplateDir), { recursive: true });
     cpSync(existingTemplateBackupDir, fixtureTemplateDir, { recursive: true });
-    existingTemplateBackupDir = null;
+  }
+  if (existingTemplateBackupRoot && existsSync(existingTemplateBackupRoot)) {
+    rmSync(existingTemplateBackupRoot, { recursive: true, force: true });
+  }
+  existingTemplateBackupDir = null;
+  existingTemplateBackupRoot = null;
+  while (tmpRoots.length > 0) {
+    const root = tmpRoots.pop();
+    if (!root) continue;
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -60,7 +85,7 @@ describe("infra materialization", () => {
     const root = createRoot();
     saveProjectConfig(root, {
       name: "Materialize test app",
-      type: "nextjs",
+      type: TEST_TEMPLATE_ID,
     });
 
     const result = materializeInfraForEnvironment(root, "prod", {
@@ -87,7 +112,7 @@ describe("infra materialization", () => {
     const root = createRoot();
     saveProjectConfig(root, {
       name: "Missing env app",
-      type: "nextjs",
+      type: TEST_TEMPLATE_ID,
     });
 
     expect(() => materializeInfraForEnvironment(root, "uat")).toThrow(
