@@ -1,12 +1,11 @@
 import type { TzConfig } from "@/lib/config";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { ShellError } from "@/lib/shell";
 import {
-  OpenTofuDockerRunner,
   type AwsBackendSettings,
   type OpenTofuPlanResourceChange,
 } from "@/lib/deployments/openTofuRunner";
+import { OpenTofuDockerRunner } from "@/lib/deployments/openTofuRunner";
+import { OpenTofuEngine } from "@/lib/deployments/openTofuEngine";
 import type {
   AdapterError,
   ApplyResult,
@@ -25,38 +24,6 @@ function requireAwsBackend(config: TzConfig): AwsBackendSettings {
     );
   }
   return backend;
-}
-
-function parsePlanSummary(text: string): { add: number; change: number; destroy: number } {
-  const match = text.match(/Plan:\s+(\d+)\s+to add,\s+(\d+)\s+to change,\s+(\d+)\s+to destroy\./i);
-  if (!match) return { add: 0, change: 0, destroy: 0 };
-  return {
-    add: Number(match[1] ?? 0),
-    change: Number(match[2] ?? 0),
-    destroy: Number(match[3] ?? 0),
-  };
-}
-
-function parseApplySummary(text: string): { add: number; change: number; destroy: number } {
-  const match = text.match(
-    /Apply complete!\s+Resources:\s+(\d+)\s+added,\s+(\d+)\s+changed,\s+(\d+)\s+destroyed\./i
-  );
-  if (!match) return { add: 0, change: 0, destroy: 0 };
-  return {
-    add: Number(match[1] ?? 0),
-    change: Number(match[2] ?? 0),
-    destroy: Number(match[3] ?? 0),
-  };
-}
-
-function parseDestroySummary(text: string): { add: number; change: number; destroy: number } {
-  const match = text.match(/Destroy complete!\s+Resources:\s+(\d+)\s+destroyed\./i);
-  if (!match) return { add: 0, change: 0, destroy: 0 };
-  return {
-    add: 0,
-    change: 0,
-    destroy: Number(match[1] ?? 0),
-  };
 }
 
 function normalizeAdapterError(error: unknown): AdapterError {
@@ -90,51 +57,24 @@ function toPlannedChanges(
   }));
 }
 
-async function readProviderOutputs(
-  runner: OpenTofuDockerRunner,
-  projectPath: string,
-  environmentId: string,
-  backend: AwsBackendSettings
-): Promise<Record<string, unknown> | undefined> {
-  try {
-    const values = await runner.runOutputValues({
-      projectPath,
-      environmentId,
-      backend,
-    });
-    return Object.keys(values).length > 0 ? values : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export function createAwsDeployAdapter(
   config: TzConfig,
-  options?: { runner?: OpenTofuDockerRunner }
+  options?: { runner?: OpenTofuDockerRunner; engine?: OpenTofuEngine }
 ): DeployAdapter {
   const backend = requireAwsBackend(config);
   const runner = options?.runner ?? new OpenTofuDockerRunner();
-  const resolveWorkspacePath = (projectPath: string, environmentId: string): string => {
-    const materializedPath = join(projectPath, ".tz", "infra", environmentId);
-    return existsSync(materializedPath) ? materializedPath : projectPath;
-  };
+  const engine = options?.engine ?? new OpenTofuEngine({ backend, runner });
 
   return {
     async plan({ projectPath, environmentId }): Promise<PlanResult> {
       try {
-        const detailed = await runner.runPlanWithJson({
-          projectPath: resolveWorkspacePath(projectPath, environmentId),
-          environmentId,
-          backend,
-        });
-        const summary = parsePlanSummary(detailed.run.stdout);
-        const driftDetected = summary.add + summary.change + summary.destroy > 0;
+        const result = await engine.plan({ projectPath, environmentId });
         return {
-          status: driftDetected ? "drifted" : "healthy",
-          summary,
-          driftDetected,
-          plannedChanges: toPlannedChanges(detailed.plannedChanges),
-          logs: detailed.run.logs,
+          status: result.status,
+          summary: result.summary,
+          driftDetected: result.driftDetected,
+          plannedChanges: toPlannedChanges(result.plannedChanges),
+          logs: result.logs,
         };
       } catch (error) {
         return {
@@ -149,22 +89,11 @@ export function createAwsDeployAdapter(
 
     async apply({ projectPath, environmentId }): Promise<ApplyResult> {
       try {
-        const workspacePath = resolveWorkspacePath(projectPath, environmentId);
-        const result = await runner.run("apply", {
-          projectPath: workspacePath,
-          environmentId,
-          backend,
-        });
-        const providerOutputs = await readProviderOutputs(
-          runner,
-          workspacePath,
-          environmentId,
-          backend
-        );
+        const result = await engine.apply({ projectPath, environmentId });
         return {
-          status: "healthy",
-          summary: parseApplySummary(result.stdout),
-          providerOutputs,
+          status: result.status,
+          summary: result.summary,
+          providerOutputs: result.providerOutputs,
           logs: result.logs,
         };
       } catch (error) {
@@ -179,14 +108,10 @@ export function createAwsDeployAdapter(
 
     async destroy({ projectPath, environmentId }): Promise<DestroyResult> {
       try {
-        const result = await runner.run("destroy", {
-          projectPath: resolveWorkspacePath(projectPath, environmentId),
-          environmentId,
-          backend,
-        });
+        const result = await engine.destroy({ projectPath, environmentId });
         return {
-          status: "healthy",
-          summary: parseDestroySummary(result.stdout),
+          status: result.status,
+          summary: result.summary,
           logs: result.logs,
         };
       } catch (error) {
@@ -201,38 +126,13 @@ export function createAwsDeployAdapter(
 
     async report({ projectPath, environmentId }): Promise<ReportResult> {
       try {
-        const workspacePath = resolveWorkspacePath(projectPath, environmentId);
-        const planResult = await runner.run(
-          "plan",
-          { projectPath: workspacePath, environmentId, backend },
-          { allowNonZero: true }
-        );
-        if (planResult.exitCode === 0) {
-          const providerOutputs = await readProviderOutputs(
-            runner,
-            workspacePath,
-            environmentId,
-            backend
-          );
+        const result = await engine.report({ projectPath, environmentId });
+        if (result.status === "healthy" || result.status === "drifted") {
           return {
-            status: "healthy",
-            driftDetected: false,
-            providerOutputs,
-            logs: [...planResult.logs],
-          };
-        }
-        if (planResult.exitCode === 2) {
-          const providerOutputs = await readProviderOutputs(
-            runner,
-            workspacePath,
-            environmentId,
-            backend
-          );
-          return {
-            status: "drifted",
-            driftDetected: true,
-            providerOutputs,
-            logs: [...planResult.logs],
+            status: result.status,
+            driftDetected: result.driftDetected,
+            providerOutputs: result.providerOutputs,
+            logs: result.logs,
           };
         }
         return {
@@ -241,10 +141,10 @@ export function createAwsDeployAdapter(
           errors: [
             {
               code: "TF_REPORT_FAILED",
-              message: planResult.stderr || "Unable to determine report status",
+              message: result.errorMessage ?? "Unable to determine report status",
             },
           ],
-          logs: [...planResult.logs],
+          logs: result.logs,
         };
       } catch (error) {
         return {

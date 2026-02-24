@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createAwsDeployAdapter } from "@/lib/deployments/awsAdapter";
 import { OpenTofuDockerRunner } from "@/lib/deployments/openTofuRunner";
+import { OpenTofuEngine } from "@/lib/deployments/openTofuEngine";
 import { ShellError } from "@/lib/shell";
 import type { TzConfig } from "@/lib/config";
 
@@ -114,5 +115,61 @@ describe("aws deploy adapter", () => {
     });
     expect(result.status).toBe("failed");
     expect(result.errors?.[0]?.code).toBe("RUNNER_UNAVAILABLE");
+  });
+
+  test("delegates execution to injected open tofu engine", async () => {
+    const engine = {
+      plan: async () => ({
+        status: "drifted" as const,
+        summary: { add: 1, change: 0, destroy: 0 },
+        driftDetected: true,
+        plannedChanges: [
+          {
+            address: "aws_apprunner_service.app[0]",
+            actions: ["create"],
+            providerName: "registry.terraform.io/hashicorp/aws",
+            resourceType: "aws_apprunner_service",
+          },
+        ],
+        logs: ["engine plan output"],
+      }),
+      apply: async () => ({
+        status: "healthy" as const,
+        summary: { add: 0, change: 1, destroy: 0 },
+        providerOutputs: {
+          APP_BASE_URL: "https://prod.example.com",
+        },
+        logs: ["engine apply output"],
+      }),
+      destroy: async () => ({
+        status: "healthy" as const,
+        summary: { add: 0, change: 0, destroy: 2 },
+        logs: ["engine destroy output"],
+      }),
+      report: async () => ({
+        status: "healthy" as const,
+        driftDetected: false,
+        providerOutputs: {
+          APP_BASE_URL: "https://prod.example.com",
+        },
+        logs: ["engine report output"],
+      }),
+    } as unknown as OpenTofuEngine;
+
+    const adapter = createAwsDeployAdapter(configWithBackend(), { engine });
+    const plan = await adapter.plan({
+      projectPath: "/tmp/demo",
+      environmentId: "prod",
+      nowIso: "2026-02-22T00:00:00.000Z",
+    });
+    expect(plan.status).toBe("drifted");
+    expect(plan.plannedChanges?.[0]?.address).toBe("aws_apprunner_service.app[0]");
+
+    const apply = await adapter.apply({
+      projectPath: "/tmp/demo",
+      environmentId: "prod",
+      nowIso: "2026-02-22T00:00:00.000Z",
+    });
+    expect(apply.providerOutputs?.APP_BASE_URL).toBe("https://prod.example.com");
   });
 });
