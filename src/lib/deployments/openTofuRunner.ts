@@ -92,14 +92,13 @@ export function buildOpenTofuDockerArgs(
     action === "init"
       ? ["init", "-input=false", "-no-color"]
       : action === "plan"
-      ? ["plan", "-input=false", "-no-color", `-var=tz_environment_id=${input.environmentId}`]
+      ? ["plan", "-input=false", "-no-color"]
       : action === "apply"
         ? [
             "apply",
             "-auto-approve",
             "-input=false",
             "-no-color",
-            `-var=tz_environment_id=${input.environmentId}`,
           ]
         : action === "destroy"
           ? [
@@ -107,7 +106,6 @@ export function buildOpenTofuDockerArgs(
               "-auto-approve",
               "-input=false",
               "-no-color",
-              `-var=tz_environment_id=${input.environmentId}`,
             ]
           : action === "show"
             ? ["show", "-no-color"]

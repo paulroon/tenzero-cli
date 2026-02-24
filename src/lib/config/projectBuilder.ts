@@ -152,6 +152,40 @@ export function listProjectConfigs(): ProjectConfigMeta[] {
   return results;
 }
 
+export function findProjectConfigByType(type: ProjectType): ProjectConfigMeta | null {
+  for (const meta of listProjectConfigs()) {
+    const loaded = loadProjectBuilderConfigWithError(meta.path);
+    if (loaded.config?.type === type) {
+      return meta;
+    }
+  }
+  return null;
+}
+
+export function findProjectConfigForProject(project: {
+  type: ProjectType;
+  templateId?: string;
+}): ProjectConfigMeta | null {
+  const configs = listProjectConfigs();
+  const templateId = project.templateId?.trim();
+  if (templateId) {
+    const explicit = configs.find((entry) => entry.id === templateId);
+    if (explicit) return explicit;
+  }
+
+  const idMatch = configs.find((entry) => entry.id === project.type);
+  if (idMatch) return idMatch;
+
+  const typeMatches = configs.filter((entry) => {
+    const loaded = loadProjectBuilderConfigWithError(entry.path);
+    return loaded.config?.type === project.type;
+  });
+  if (typeMatches.length === 1) {
+    return typeMatches[0];
+  }
+  return null;
+}
+
 type PipelineFragmentRef = {
   useFragment: string;
   when?: WhenClause;

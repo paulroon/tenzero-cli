@@ -8,6 +8,10 @@ export const finalize: StepExecutor = async (ctx, config) => {
   const type: ProjectType = ensureProjectType(rawType);
   const bootstrapReleaseConfig = config.bootstrapReleaseConfig === true;
   const bootstrapReleaseWorkflow = config.bootstrapReleaseWorkflow === true;
+  const templateId =
+    typeof config.templateId === "string" && config.templateId.trim().length > 0
+      ? config.templateId.trim()
+      : undefined;
   const awsRegionForReleaseWorkflow =
     typeof config.awsRegionForReleaseWorkflow === "string"
       ? config.awsRegionForReleaseWorkflow
@@ -16,6 +20,7 @@ export const finalize: StepExecutor = async (ctx, config) => {
   await runFinalize(ctx.projectPath, {
     name: ctx.projectName,
     type,
+    templateId,
     builderAnswers: ctx.answers,
     bootstrapReleaseConfig,
     bootstrapReleaseWorkflow,

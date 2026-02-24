@@ -1,7 +1,7 @@
 import { cwd } from "node:process";
 import { readFileSync } from "node:fs";
 import {
-  listProjectConfigs,
+  findProjectConfigForProject,
   loadDeployTemplateConfigWithError,
   loadConfig,
   loadProjectReleaseConfigWithError,
@@ -118,7 +118,7 @@ const defaultDeps: DeploymentsCommandDeps = {
   }) => {
     const project = loadProjectConfig(projectPath);
     if (!project) return;
-    const templateMeta = listProjectConfigs().find((entry) => entry.id === project.type);
+    const templateMeta = findProjectConfigForProject(project);
     if (!templateMeta) return;
     const result = loadDeployTemplateConfigWithError(templateMeta.path);
     if (!result.exists || !result.config) return;
@@ -160,7 +160,7 @@ const defaultDeps: DeploymentsCommandDeps = {
   validateDeployTemplateForProject: (projectPath: string, writeLine: (text: string) => void) => {
     const project = loadProjectConfig(projectPath);
     if (!project) return;
-    const templateMeta = listProjectConfigs().find((entry) => entry.id === project.type);
+    const templateMeta = findProjectConfigForProject(project);
     if (!templateMeta) return;
     const result = loadDeployTemplateConfigWithError(templateMeta.path);
     if (!result.exists) {
@@ -296,7 +296,7 @@ function persistProviderOutputs(
   if (Object.keys(providerOutputs).length === 0) return;
   const project = loadProjectConfig(projectPath);
   if (!project) return;
-  const templateMeta = listProjectConfigs().find((entry) => entry.id === project.type);
+  const templateMeta = findProjectConfigForProject(project);
   if (!templateMeta) return;
   const deployConfigResult = loadDeployTemplateConfigWithError(templateMeta.path);
   const environment = deployConfigResult.config?.environments.find(
@@ -453,6 +453,10 @@ export async function maybeRunDeploymentsCommand(
         confirmDriftForProd: flags["confirm-drift-prod"] === true,
       });
       writeApplySummary(deps.writeLine, result);
+      if (hasErrors(result)) {
+        writeErrors(deps.writeLine, result.errors ?? []);
+        return { handled: true, exitCode: 1 };
+      }
       deps.validatePostDeployOutputs({
         projectPath,
         environmentId,
@@ -461,10 +465,6 @@ export async function maybeRunDeploymentsCommand(
       });
       if (result.providerOutputs) {
         persistProviderOutputs(projectPath, environmentId, result.providerOutputs, deps.writeLine);
-      }
-      if (hasErrors(result)) {
-        writeErrors(deps.writeLine, result.errors ?? []);
-        return { handled: true, exitCode: 1 };
       }
       deps.writeLine(`Apply completed for '${environmentId}'.`);
       return { handled: true, exitCode: 0 };
@@ -505,6 +505,11 @@ export async function maybeRunDeploymentsCommand(
           onCycle: (cycle, cycleResult) => {
             deps.writeLine(`Refresh cycle ${cycle}:`);
             writeReportSummary(deps.writeLine, cycleResult);
+            if (hasErrors(cycleResult)) {
+              writeErrors(deps.writeLine, cycleResult.errors ?? []);
+              writeReportRemediation(deps.writeLine, environmentId, cycleResult);
+              return;
+            }
             deps.validatePostDeployOutputs({
               projectPath,
               environmentId,
@@ -534,6 +539,10 @@ export async function maybeRunDeploymentsCommand(
 
     const result = await deps.runReport(config, projectPath, environmentId, adapter);
     writeReportSummary(deps.writeLine, result);
+    if (hasErrors(result)) {
+      writeErrors(deps.writeLine, result.errors ?? []);
+      return { handled: true, exitCode: 1 };
+    }
     deps.validatePostDeployOutputs({
       projectPath,
       environmentId,
@@ -542,10 +551,6 @@ export async function maybeRunDeploymentsCommand(
     });
     if (result.providerOutputs) {
       persistProviderOutputs(projectPath, environmentId, result.providerOutputs, deps.writeLine);
-    }
-    if (hasErrors(result)) {
-      writeErrors(deps.writeLine, result.errors ?? []);
-      return { handled: true, exitCode: 1 };
     }
     writeReportRemediation(deps.writeLine, environmentId, result);
     return { handled: true, exitCode: 0 };

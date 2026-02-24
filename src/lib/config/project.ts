@@ -125,6 +125,8 @@ export type TzProjectConfig = {
     name: string;
     path: string;
     type: ProjectType;
+    /** Template identifier (directory name), e.g. "symfony-webapp". */
+    templateId?: string;
     /** Answers from the project builder (projectName, projectType, symfonyAuth, etc.) */
     builderAnswers?: Record<string, string>;
     openWith?: ProjectOpenWith;
@@ -454,6 +456,10 @@ export function loadProjectConfig(path: string): TzProjectConfig | null {
         name: config.name ?? "unknown",
         path,
         type,
+        templateId:
+            typeof config.templateId === "string" && config.templateId.trim().length > 0
+                ? config.templateId.trim()
+                : undefined,
         builderAnswers,
         openWith,
         environmentOutputs,

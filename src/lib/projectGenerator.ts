@@ -30,6 +30,7 @@ export async function generateProject(
     pipeline: PipelineStep[];
     configDir?: string;
     projectType: ProjectType;
+    templateId?: string;
     bootstrapReleaseConfig?: boolean;
     bootstrapReleaseWorkflow?: boolean;
     awsRegionForReleaseWorkflow?: string;
@@ -73,6 +74,7 @@ export async function generateProject(
         type: "finalize",
         config: {
           projectType: options.projectType,
+          templateId: options.templateId,
           bootstrapReleaseConfig: options.bootstrapReleaseConfig === true,
           bootstrapReleaseWorkflow: options.bootstrapReleaseWorkflow === true,
           awsRegionForReleaseWorkflow: options.awsRegionForReleaseWorkflow,
@@ -80,6 +82,7 @@ export async function generateProject(
       },
       config: {
         projectType: options.projectType,
+        templateId: options.templateId,
         bootstrapReleaseConfig: options.bootstrapReleaseConfig === true,
         bootstrapReleaseWorkflow: options.bootstrapReleaseWorkflow === true,
         awsRegionForReleaseWorkflow: options.awsRegionForReleaseWorkflow,

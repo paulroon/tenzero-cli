@@ -4,6 +4,8 @@ export * from "./release";
 export * from "./deployTemplate";
 export {
   listProjectConfigs,
+  findProjectConfigByType,
+  findProjectConfigForProject,
   loadProjectBuilderConfig,
   getApplicableSteps,
   getApplicableQuestionNodes,

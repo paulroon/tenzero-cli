@@ -134,6 +134,34 @@ describe("deployments commands", () => {
     expect(lines.join("\n")).toContain("[TF_CMD_FAILED] apply failed");
   });
 
+  test("apply command surfaces adapter errors before output validation", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(["deployments", "apply", "--env", "test"], {
+      ...withMaterialize({
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({ allowed: true, issues: [] }),
+        assertMode: () => undefined,
+        createAdapter: () => ({} as never),
+        runReport: async () => ({
+          status: "healthy",
+          driftDetected: false,
+        }),
+        runApply: async () => ({
+          status: "failed",
+          summary: { add: 0, change: 0, destroy: 0 },
+          errors: [{ code: "TF_CMD_FAILED", message: "underlying apply error" }],
+        }),
+        validatePostDeployOutputs: () => {
+          throw new Error("should not validate outputs when apply failed");
+        },
+        writeLine: (line) => lines.push(line),
+      }),
+    });
+    expect(result.exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("[TF_CMD_FAILED] underlying apply error");
+    expect(lines.join("\n")).not.toContain("should not validate outputs");
+  });
+
   test("apply command blocks on preflight drift unless confirmed", async () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(["deployments", "apply", "--env", "uat"], {
@@ -222,6 +250,30 @@ describe("deployments commands", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(lines.join("\n")).toContain("Remediation: review plan and apply explicitly for 'uat'.");
+  });
+
+  test("report command surfaces adapter errors before output validation", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(["deployments", "report", "--env", "test"], {
+      ...withMaterialize({
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({ allowed: true, issues: [] }),
+        assertMode: () => undefined,
+        createAdapter: () => ({} as never),
+        runReport: async () => ({
+          status: "failed",
+          driftDetected: false,
+          errors: [{ code: "TF_REPORT_FAILED", message: "underlying report error" }],
+        }),
+        validatePostDeployOutputs: () => {
+          throw new Error("should not validate outputs when report failed");
+        },
+        writeLine: (line) => lines.push(line),
+      }),
+    });
+    expect(result.exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("[TF_REPORT_FAILED] underlying report error");
+    expect(lines.join("\n")).not.toContain("should not validate outputs");
   });
 
   test("report watch mode prints cycle updates", async () => {

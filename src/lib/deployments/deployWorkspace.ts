@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { listProjectConfigs, loadDeployTemplateConfigWithError } from "@/lib/config";
+import { findProjectConfigForProject, loadDeployTemplateConfigWithError } from "@/lib/config";
 import { loadProjectConfig, saveProjectConfig } from "@/lib/config/project";
 import { planEnvironmentDeployment } from "@/lib/deployments/capabilityPlanner";
 
@@ -106,7 +106,7 @@ export function prepareDeployWorkspaceForEnvironment(
   if (!project) {
     throw new Error(`Project config not found: ${projectPath}`);
   }
-  const templateMeta = listProjectConfigs().find((entry) => entry.id === project.type);
+  const templateMeta = findProjectConfigForProject(project);
   if (!templateMeta) {
     throw new Error(`Template '${project.type}' config not found.`);
   }

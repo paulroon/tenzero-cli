@@ -46,6 +46,7 @@ export async function finalizeTzProjectSetup(
   config: {
     name: string;
     type: ProjectType;
+    templateId?: string;
     builderAnswers?: ProjectBuilderAnswers;
     bootstrapReleaseConfig?: boolean;
     bootstrapReleaseWorkflow?: boolean;

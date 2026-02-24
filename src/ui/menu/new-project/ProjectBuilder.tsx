@@ -311,6 +311,7 @@ export default function ProjectBuilder({
         type: "finalize",
         config: {
           projectType: builderConfig.type,
+          templateId: builderConfig.id,
           bootstrapReleaseConfig: hasDeployTemplate,
           bootstrapReleaseWorkflow: hasDeployTemplate,
           awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
@@ -330,6 +331,7 @@ export default function ProjectBuilder({
           pipeline: builderConfig.pipeline,
           configDir: builderConfig._configDir,
           projectType: builderConfig.type,
+          templateId: builderConfig.id,
           bootstrapReleaseConfig: hasDeployTemplate,
           bootstrapReleaseWorkflow: hasDeployTemplate,
           awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
@@ -399,6 +401,7 @@ export default function ProjectBuilder({
         type: "finalize",
         config: {
           projectType: builderConfig.type,
+          templateId: builderConfig.id,
           bootstrapReleaseConfig: hasDeployTemplate,
           bootstrapReleaseWorkflow: hasDeployTemplate,
           awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
@@ -423,6 +426,7 @@ export default function ProjectBuilder({
           pipeline: builderConfig.pipeline,
           configDir: builderConfig._configDir,
           projectType: builderConfig.type,
+          templateId: builderConfig.id,
           bootstrapReleaseConfig: hasDeployTemplate,
           bootstrapReleaseWorkflow: hasDeployTemplate,
           awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,

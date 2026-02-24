@@ -7,7 +7,7 @@ import {
     syncProjects,
     saveConfig,
     DEFAULT_EDITOR,
-    listProjectConfigs,
+    findProjectConfigForProject,
     loadDeployTemplateConfigWithError,
     loadProjectReleaseConfigWithError,
     type TzProjectConfig,
@@ -388,9 +388,7 @@ export default function Dashboard({ onBack, config, onConfigUpdate }: Props) {
 
     const deployTemplateConfig = useMemo(() => {
         if (!currentProject) return null;
-        const templateMeta = listProjectConfigs().find(
-            (entry) => entry.id === currentProject.type
-        );
+        const templateMeta = findProjectConfigForProject(currentProject);
         if (!templateMeta) return null;
         return loadDeployTemplateConfigWithError(templateMeta.path).config;
     }, [currentProject?.type]);
@@ -781,9 +779,7 @@ export default function Dashboard({ onBack, config, onConfigUpdate }: Props) {
                 environmentId
             ] ??
             projectStateConfig?.releaseState?.environments?.[environmentId];
-        const templateMeta = listProjectConfigs().find(
-            (entry) => entry.id === currentProject.type
-        );
+        const templateMeta = findProjectConfigForProject(currentProject);
         const deployConfig = templateMeta
             ? loadDeployTemplateConfigWithError(templateMeta.path).config
             : null;
@@ -1342,9 +1338,7 @@ export default function Dashboard({ onBack, config, onConfigUpdate }: Props) {
             .filter((line) => line.length > 0);
         setAvailableReleaseTags(tags);
 
-        const templateMeta = listProjectConfigs().find(
-            (entry) => entry.id === currentProject.type
-        );
+        const templateMeta = findProjectConfigForProject(currentProject);
         if (templateMeta) {
             const deployConfigResult = loadDeployTemplateConfigWithError(
                 templateMeta.path
@@ -1593,9 +1587,7 @@ export default function Dashboard({ onBack, config, onConfigUpdate }: Props) {
             projectStateConfig?.releaseState?.environments?.[
                 selectedEnvironmentId
             ];
-        const templateMeta = listProjectConfigs().find(
-            (entry) => entry.id === currentProject.type
-        );
+        const templateMeta = findProjectConfigForProject(currentProject);
         const deployConfig = templateMeta
             ? loadDeployTemplateConfigWithError(templateMeta.path).config
             : null;
