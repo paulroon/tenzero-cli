@@ -33,7 +33,10 @@ import { waitForReleaseWorkflowCompletion } from "@/lib/github/actionsMonitor";
 import { maybeDeleteGithubRepoForProject } from "@/lib/github/repoLifecycle";
 import { resolveReleaseImageForTag } from "@/lib/github/releaseValidation";
 import { bootstrapGithubRepoVariables } from "@/lib/github/repoVariables";
-import { ensureReleaseEcrRepository } from "@/lib/github/releaseDependencies";
+import {
+  ensureReleaseEcrRepository,
+  deleteReleaseEcrRepository,
+} from "@/lib/github/releaseDependencies";
 import App from "@/ui/App";
 import { DeleteProjectView } from "@/ui/dashboard/DeleteProjectView";
 import { ReleaseBuildMonitorView } from "@/ui/dashboard/ReleaseBuildMonitorView";
@@ -381,6 +384,16 @@ export default function Dashboard({
       };
 
       await stopDockerIfPossible();
+      if (templateConfig?.infra) {
+        const ecrDeleteResult = await deleteReleaseEcrRepository({
+          projectPath: currentProject.path,
+          projectName: currentProject.name,
+          awsRegionHint: config.integrations?.aws?.backend?.region,
+        });
+        if (!ecrDeleteResult.ok) {
+          throw new Error(ecrDeleteResult.message);
+        }
+      }
       if (deleteRemoteRepoOnDelete) {
         const remoteDeleteResult = await maybeDeleteGithubRepoForProject(
           currentProject.path

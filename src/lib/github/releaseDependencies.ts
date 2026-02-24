@@ -182,3 +182,70 @@ export async function ensureReleaseEcrRepository(args: {
     ecrStatus: "created",
   };
 }
+
+export async function deleteReleaseEcrRepository(args: {
+  projectPath: string;
+  projectName: string;
+  awsRegionHint?: string;
+}): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
+  const token = getSecretValue("GITHUB_TOKEN");
+  const repoRef = token ? await getRepoRef(args.projectPath) : null;
+
+  const awsRegion =
+    (token && repoRef ? await getRepoVariable(token, repoRef, "AWS_REGION") : undefined) ??
+    args.awsRegionHint?.trim() ??
+    process.env.AWS_REGION?.trim() ??
+    process.env.AWS_DEFAULT_REGION?.trim();
+  if (!awsRegion) {
+    return {
+      ok: false,
+      message: "Missing AWS region. Cannot delete release repository.",
+    };
+  }
+
+  const ecrRepository =
+    (token && repoRef ? await getRepoVariable(token, repoRef, "ECR_REPOSITORY") : undefined) ??
+    `tz-${toProjectSlug(args.projectName || basename(args.projectPath))}-prod`;
+
+  const deleteResult = await callShell(
+    "aws",
+    [
+      "ecr",
+      "delete-repository",
+      "--repository-name",
+      ecrRepository,
+      "--region",
+      awsRegion,
+      "--force",
+    ],
+    {
+      cwd: args.projectPath,
+      collect: true,
+      quiet: true,
+      throwOnNonZero: false,
+      stdin: "ignore",
+    }
+  );
+  if (deleteResult.exitCode === 0) {
+    return {
+      ok: true,
+      message: `Deleted release repository '${ecrRepository}' in ${awsRegion}.`,
+    };
+  }
+  const deleteError = `${deleteResult.stderr ?? ""} ${deleteResult.stdout ?? ""}`;
+  if (
+    deleteError.includes("RepositoryNotFoundException") ||
+    deleteError.includes("does not exist in the registry")
+  ) {
+    return {
+      ok: true,
+      message: `Release repository '${ecrRepository}' was already missing in ${awsRegion}.`,
+    };
+  }
+  return {
+    ok: false,
+    message:
+      deleteError.trim() ||
+      `Failed deleting release repository '${ecrRepository}' in region '${awsRegion}'.`,
+  };
+}
