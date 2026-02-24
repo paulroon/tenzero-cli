@@ -32,6 +32,7 @@ import {
 import { waitForReleaseWorkflowCompletion } from "@/lib/github/actionsMonitor";
 import { maybeDeleteGithubRepoForProject } from "@/lib/github/repoLifecycle";
 import { resolveReleaseImageForTag } from "@/lib/github/releaseValidation";
+import { bootstrapGithubRepoVariables } from "@/lib/github/repoVariables";
 import App from "@/ui/App";
 import { DeleteProjectView } from "@/ui/dashboard/DeleteProjectView";
 import { ReleaseBuildMonitorView } from "@/ui/dashboard/ReleaseBuildMonitorView";
@@ -718,10 +719,36 @@ export default function Dashboard({
       return;
     }
 
-    const resolvedImage = await resolveReleaseImageForTag({
+    let resolvedImage = await resolveReleaseImageForTag({
       projectPath: currentProject.path,
       tag: result.tag,
     });
+    if (
+      !resolvedImage.ok &&
+      resolvedImage.message.includes(
+        "Missing AWS_REGION or ECR_REPOSITORY repo variables for release image resolution."
+      )
+    ) {
+      const bootstrapResult = await bootstrapGithubRepoVariables({
+        projectPath: currentProject.path,
+        projectName: currentProject.name,
+        awsRegion: config.integrations?.aws?.backend?.region,
+      });
+      if (bootstrapResult.configured) {
+        resolvedImage = await resolveReleaseImageForTag({
+          projectPath: currentProject.path,
+          tag: result.tag,
+        });
+      } else {
+        setReleaseBuildMonitor({
+          tag: result.tag,
+          stage: "failed",
+          message: `${resolvedImage.message} ${bootstrapResult.message ?? "GitHub repo variable bootstrap was skipped."}`,
+          runUrl: resolvedImage.runUrl,
+        });
+        return;
+      }
+    }
     if (!resolvedImage.ok) {
       setReleaseBuildMonitor({
         tag: result.tag,

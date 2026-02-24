@@ -93,8 +93,13 @@ export async function bootstrapGithubRepoVariables(args: {
   }
 
   const projectSlug = toProjectSlug(args.projectName || basename(args.projectPath));
+  const inferredRegion =
+    args.awsRegion?.trim() ||
+    process.env.AWS_REGION?.trim() ||
+    process.env.AWS_DEFAULT_REGION?.trim() ||
+    "__SET_ME__";
   const defaults: Record<string, string> = {
-    AWS_REGION: args.awsRegion || "__SET_ME__",
+    AWS_REGION: inferredRegion,
     AWS_ACCOUNT_ID: "__SET_ME__",
     AWS_OIDC_ROLE_ARN: "__SET_ME__",
     ECR_REPOSITORY: `tz-${projectSlug}-prod`,
