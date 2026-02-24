@@ -28,7 +28,7 @@ infra:
         - envConfig
         - postgres
       constraints:
-        enableAppRunner: true
+        enableAppRunner: false
       outputs:
         - key: APP_BASE_URL
           type: string
@@ -117,6 +117,39 @@ describe("infra materialization", () => {
 
     expect(() => materializeInfraForEnvironment(root, "uat")).toThrow(
       "Environment 'uat' is not defined"
+    );
+  });
+
+  test("enables app runtime when a release is selected", () => {
+    const root = createRoot();
+    saveProjectConfig(root, {
+      name: "Release selected app",
+      type: TEST_TEMPLATE_ID,
+      releaseState: {
+        environments: {
+          prod: {
+            selectedReleaseTag: "v0.1.2",
+            selectedImageRef:
+              "206414186603.dkr.ecr.eu-west-2.amazonaws.com/tz-app-prod@sha256:abc123",
+          },
+        },
+      },
+    });
+
+    const result = materializeInfraForEnvironment(root, "prod", {
+      backendRegion: "eu-west-2",
+    });
+    const mainTfPath = result.filePaths.find((path) => path.endsWith("main.tf"));
+    expect(mainTfPath).toBeDefined();
+    if (!mainTfPath) return;
+
+    const contents = readFileSync(mainTfPath, "utf-8");
+    expect(contents).toContain('\\"enableAppRunner\\":true');
+    expect(contents).toContain(
+      '\\"appImageTag\\":\\"v0.1.2\\"'
+    );
+    expect(contents).toContain(
+      '\\"appImageIdentifier\\":\\"206414186603.dkr.ecr.eu-west-2.amazonaws.com/tz-app-prod@sha256:abc123\\"'
     );
   });
 });

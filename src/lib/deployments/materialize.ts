@@ -74,9 +74,13 @@ export function materializeInfraForEnvironment(
   const selectedReleaseTag = releaseSelection?.selectedReleaseTag;
   if (typeof selectedImageRef === "string" && selectedImageRef.trim().length > 0) {
     effectiveConstraints.appImageIdentifier = selectedImageRef.trim();
+    // Selecting a release image means runtime should be enabled for deployment.
+    effectiveConstraints.enableAppRunner = true;
   }
   if (typeof selectedReleaseTag === "string" && selectedReleaseTag.trim().length > 0) {
     effectiveConstraints.appImageTag = selectedReleaseTag.trim();
+    // Selecting a release tag means runtime should be enabled for deployment.
+    effectiveConstraints.enableAppRunner = true;
   }
   if (backendRegion) {
     effectiveConstraints.region = backendRegion;

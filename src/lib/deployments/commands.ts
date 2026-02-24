@@ -190,11 +190,18 @@ function persistProviderOutputs(
   const template = loadProjectBuilderConfig(project.type);
   const environment = template?.infra?.environments.find((entry) => entry.id === environmentId);
   if (!environment) return;
+  const allowedOutputKeys = new Set(environment.outputs.map((output) => output.key));
+  const filteredProviderOutputs: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(providerOutputs)) {
+    if (!allowedOutputKeys.has(key)) continue;
+    filteredProviderOutputs[key] = value;
+  }
+  if (Object.keys(filteredProviderOutputs).length === 0) return;
   try {
     const outputs = persistResolvedEnvironmentOutputs({
       projectPath,
       environment,
-      providerOutputs,
+      providerOutputs: filteredProviderOutputs,
     });
     if (outputs.length === 0) return;
     writeLine("Runtime outputs:");
