@@ -5,6 +5,7 @@ import { saveConfig, syncProjects, type TzConfig } from "@/lib/config";
 import { evaluateDeploymentsEnablementGate } from "@/lib/deployments/gate";
 import { getErrorMessage } from "@/lib/errors";
 import { callShell } from "@/lib/shell";
+import { ensureGithubOidcRoleForDeployments } from "@/lib/github/oidcRole";
 import { useBackKey } from "@/hooks/useBackKey";
 import {
   OptionLoadingPanel,
@@ -148,6 +149,20 @@ export default function DeploymentsScreen({
       lockStrategy: backend?.lockStrategy ?? "s3-lockfile",
     }) as const;
 
+  const ensureOidcRole = async (): Promise<{ ok: true; roleArn: string; message: string } | { ok: false; message: string }> => {
+    const current = ensureBackend();
+    if (!current.profile || !current.region) {
+      return {
+        ok: false,
+        message: "Backend profile and region are required before ensuring GitHub OIDC role.",
+      };
+    }
+    return ensureGithubOidcRoleForDeployments({
+      profile: current.profile,
+      region: current.region,
+    });
+  };
+
   const setBackendField = (field: BackendField, value: string) => {
     const current = ensureBackend();
     const next: TzConfig = {
@@ -156,6 +171,7 @@ export default function DeploymentsScreen({
         ...(config.integrations ?? {}),
         aws: {
           connected: aws?.connected === true,
+          oidcRoleArn: aws?.oidcRoleArn,
           backend: {
             ...current,
             [field]: value.trim(),
@@ -169,13 +185,25 @@ export default function DeploymentsScreen({
     setPhase("done");
   };
 
-  const runValidationChecks = () => {
+  const runValidationChecks = async () => {
     const current = ensureBackend();
     const hasBackendDetails =
       current.bucket.length > 0 &&
       current.region.length > 0 &&
       current.profile.length > 0 &&
       current.statePrefix.length > 0;
+    if (!hasBackendDetails) {
+      setErrorMessage("Backend validation failed. Complete all backend config fields and retry.");
+      setPhase("error");
+      return;
+    }
+
+    const oidcResult = await ensureOidcRole();
+    if (!oidcResult.ok) {
+      setErrorMessage(oidcResult.message);
+      setPhase("error");
+      return;
+    }
 
     const next: TzConfig = {
       ...config,
@@ -183,6 +211,7 @@ export default function DeploymentsScreen({
         ...(config.integrations ?? {}),
         aws: {
           connected: aws?.connected === true,
+          oidcRoleArn: oidcResult.roleArn,
           backend: current,
           backendChecks: {
             stateReadWritePassed: hasBackendDetails,
@@ -193,29 +222,54 @@ export default function DeploymentsScreen({
       },
     };
     updateConfig(next);
-    if (hasBackendDetails) {
-      setStatusMessage("Backend validation checks passed.");
-      setPhase("done");
-      return;
-    }
-    setErrorMessage("Backend validation failed. Complete all backend config fields and retry.");
-    setPhase("error");
+    setStatusMessage(`Backend validation checks passed.\nOIDC role: ${oidcResult.roleArn}`);
+    setPhase("done");
   };
 
-  const setAwsConnected = (connected: boolean) => {
-    const next: TzConfig = {
+  const setAwsConnected = async (connected: boolean) => {
+    const currentBackend = ensureBackend();
+    const baseNext: TzConfig = {
       ...config,
       integrations: {
         ...(config.integrations ?? {}),
         aws: {
           connected,
-          backend: ensureBackend(),
+          oidcRoleArn: aws?.oidcRoleArn,
+          backend: currentBackend,
+          backendChecks: aws?.backendChecks,
+        },
+      },
+    };
+    if (!connected) {
+      updateConfig(baseNext);
+      setStatusMessage("AWS integration disconnected.");
+      setPhase("done");
+      return;
+    }
+
+    setPhase("working");
+    const oidcResult = await ensureOidcRole();
+    if (!oidcResult.ok) {
+      updateConfig(baseNext);
+      setErrorMessage(`${oidcResult.message} AWS integration is connected, but OIDC role was not ensured.`);
+      setPhase("error");
+      return;
+    }
+
+    const next: TzConfig = {
+      ...baseNext,
+      integrations: {
+        ...(baseNext.integrations ?? {}),
+        aws: {
+          ...(baseNext.integrations?.aws ?? { connected: true }),
+          oidcRoleArn: oidcResult.roleArn,
+          backend: currentBackend,
           backendChecks: aws?.backendChecks,
         },
       },
     };
     updateConfig(next);
-    setStatusMessage(connected ? "AWS integration marked connected." : "AWS integration disconnected.");
+    setStatusMessage(`AWS integration marked connected.\nOIDC role: ${oidcResult.roleArn}`);
     setPhase("done");
   };
 
@@ -284,6 +338,13 @@ export default function DeploymentsScreen({
   };
 
   const enableDeploymentsMode = () => {
+    if (!aws?.oidcRoleArn || aws.oidcRoleArn.trim().length === 0) {
+      setErrorMessage(
+        "Deployments mode requires AWS_OIDC_ROLE_ARN. Run backend validation checks to ensure and capture the role ARN."
+      );
+      setPhase("error");
+      return;
+    }
     const latestGate = evaluateDeploymentsEnablementGate(config);
     if (!latestGate.allowed) {
       setErrorMessage(latestGate.issues[0]?.message ?? "Deployments mode gate failed.");
@@ -415,7 +476,7 @@ export default function DeploymentsScreen({
           ]}
           onChange={(value) => {
             if (value === "toggleAws") {
-              setAwsConnected(!(aws?.connected === true));
+              void setAwsConnected(!(aws?.connected === true));
               return;
             }
             if (value === "bucket") {

@@ -10,6 +10,7 @@ export type AwsBackendLockStrategy = "s3-lockfile" | "dynamodb";
 
 export type AwsIntegrationConfig = {
   connected: boolean;
+  oidcRoleArn?: string;
   backend?: {
     bucket: string;
     region: string;

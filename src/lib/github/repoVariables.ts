@@ -7,6 +7,13 @@ type RepoRef = {
   repo: string;
 };
 
+const REQUIRED_RELEASE_REPO_VARIABLES = [
+  "AWS_REGION",
+  "AWS_ACCOUNT_ID",
+  "AWS_OIDC_ROLE_ARN",
+  "ECR_REPOSITORY",
+] as const;
+
 function toProjectSlug(name: string): string {
   const normalized = name
     .toLowerCase()
@@ -21,11 +28,61 @@ function parseGitHubRepoFromOrigin(originUrl: string): RepoRef | null {
   if (sshMatch?.[1] && sshMatch[2]) {
     return { owner: sshMatch[1], repo: sshMatch[2] };
   }
-  const httpsMatch = originUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i);
+  const httpsMatch = originUrl.match(
+    /^https:\/\/(?:[^@/]+@)?github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i
+  );
   if (httpsMatch?.[1] && httpsMatch[2]) {
     return { owner: httpsMatch[1], repo: httpsMatch[2] };
   }
   return null;
+}
+
+function isConfiguredVariableValue(value: string | undefined): boolean {
+  return !!value && value.trim().length > 0 && value.trim() !== "__SET_ME__";
+}
+
+async function getRepoVariableValue(
+  token: string,
+  repo: RepoRef,
+  name: string
+): Promise<string | undefined> {
+  const response = await fetch(
+    `https://api.github.com/repos/${repo.owner}/${repo.repo}/actions/variables/${name}`,
+    {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    }
+  );
+  if (response.status === 404) return undefined;
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `Failed to read GitHub repo variable '${name}' (${response.status}): ${body || response.statusText}`
+    );
+  }
+  const payload = (await response.json()) as { value?: string };
+  const value = payload.value?.trim();
+  return value && value.length > 0 ? value : undefined;
+}
+
+async function resolveAwsAccountId(projectPath: string): Promise<string | undefined> {
+  const accountResult = await callShell(
+    "aws",
+    ["sts", "get-caller-identity", "--query", "Account", "--output", "text"],
+    {
+      cwd: projectPath,
+      collect: true,
+      quiet: true,
+      throwOnNonZero: false,
+      stdin: "ignore",
+    }
+  );
+  if (accountResult.exitCode !== 0) return undefined;
+  const account = (accountResult.stdout ?? "").trim();
+  return account.length > 0 && account !== "None" ? account : undefined;
 }
 
 async function upsertVariable(args: {
@@ -84,6 +141,7 @@ export async function bootstrapGithubRepoVariables(args: {
   projectPath: string;
   projectName: string;
   awsRegion?: string;
+  oidcRoleArn?: string;
 }): Promise<{ configured: boolean; message?: string }> {
   const token = getSecretValue("GITHUB_TOKEN");
   if (!token) {
@@ -116,16 +174,26 @@ export async function bootstrapGithubRepoVariables(args: {
   }
 
   const projectSlug = toProjectSlug(args.projectName || basename(args.projectPath));
+  const existingValues: Partial<Record<(typeof REQUIRED_RELEASE_REPO_VARIABLES)[number], string>> = {};
+  for (const name of REQUIRED_RELEASE_REPO_VARIABLES) {
+    existingValues[name] = await getRepoVariableValue(token, repo, name);
+  }
   const inferredRegion =
+    (isConfiguredVariableValue(existingValues.AWS_REGION) ? existingValues.AWS_REGION : undefined) ||
     args.awsRegion?.trim() ||
     process.env.AWS_REGION?.trim() ||
-    process.env.AWS_DEFAULT_REGION?.trim() ||
-    "__SET_ME__";
+    process.env.AWS_DEFAULT_REGION?.trim();
+  const inferredAccountId =
+    (isConfiguredVariableValue(existingValues.AWS_ACCOUNT_ID) ? existingValues.AWS_ACCOUNT_ID : undefined) ||
+    (await resolveAwsAccountId(args.projectPath));
   const defaults: Record<string, string> = {
-    AWS_REGION: inferredRegion,
-    AWS_ACCOUNT_ID: "__SET_ME__",
-    AWS_OIDC_ROLE_ARN: "__SET_ME__",
-    ECR_REPOSITORY: `tz-${projectSlug}-prod`,
+    AWS_REGION: inferredRegion || "__SET_ME__",
+    AWS_ACCOUNT_ID: inferredAccountId || "__SET_ME__",
+    AWS_OIDC_ROLE_ARN:
+      existingValues.AWS_OIDC_ROLE_ARN ||
+      args.oidcRoleArn?.trim() ||
+      "__SET_ME__",
+    ECR_REPOSITORY: existingValues.ECR_REPOSITORY || `tz-${projectSlug}-prod`,
   };
   try {
     for (const [name, value] of Object.entries(defaults)) {
@@ -144,4 +212,56 @@ export async function bootstrapGithubRepoVariables(args: {
     configured: true,
     message: `Configured GitHub Actions variables for ${repo.owner}/${repo.repo}.`,
   };
+}
+
+export async function validateGithubRepoVariablesForRelease(args: {
+  projectPath: string;
+}): Promise<{ ok: true } | { ok: false; message: string; missing: string[] }> {
+  const token = getSecretValue("GITHUB_TOKEN");
+  if (!token) {
+    return {
+      ok: false,
+      message: "Missing GITHUB_TOKEN. Cannot validate GitHub release variables.",
+      missing: [...REQUIRED_RELEASE_REPO_VARIABLES],
+    };
+  }
+  const remote = await callShell("git", ["remote", "get-url", "origin"], {
+    cwd: args.projectPath,
+    collect: true,
+    quiet: true,
+    throwOnNonZero: false,
+    stdin: "ignore",
+  });
+  const originUrl = (remote.stdout ?? "").trim();
+  if (remote.exitCode !== 0 || originUrl.length === 0) {
+    return {
+      ok: false,
+      message: "No git origin configured yet.",
+      missing: [...REQUIRED_RELEASE_REPO_VARIABLES],
+    };
+  }
+  const repo = parseGitHubRepoFromOrigin(originUrl);
+  if (!repo) {
+    return {
+      ok: false,
+      message: "Git origin is not a GitHub repository URL.",
+      missing: [...REQUIRED_RELEASE_REPO_VARIABLES],
+    };
+  }
+
+  const missing: string[] = [];
+  for (const name of REQUIRED_RELEASE_REPO_VARIABLES) {
+    const value = await getRepoVariableValue(token, repo, name);
+    if (!isConfiguredVariableValue(value)) {
+      missing.push(name);
+    }
+  }
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      message: `Release is blocked until required GitHub repo variables are configured: ${missing.join(", ")}.`,
+      missing,
+    };
+  }
+  return { ok: true };
 }

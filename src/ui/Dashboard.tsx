@@ -32,11 +32,15 @@ import {
 import { waitForReleaseWorkflowCompletion } from "@/lib/github/actionsMonitor";
 import { maybeDeleteGithubRepoForProject } from "@/lib/github/repoLifecycle";
 import { resolveReleaseImageForTag } from "@/lib/github/releaseValidation";
-import { bootstrapGithubRepoVariables } from "@/lib/github/repoVariables";
+import {
+  bootstrapGithubRepoVariables,
+  validateGithubRepoVariablesForRelease,
+} from "@/lib/github/repoVariables";
 import {
   ensureReleaseEcrRepository,
   deleteReleaseEcrRepository,
 } from "@/lib/github/releaseDependencies";
+import { ensureGithubOidcRoleForDeployments } from "@/lib/github/oidcRole";
 import App from "@/ui/App";
 import { DeleteProjectView } from "@/ui/dashboard/DeleteProjectView";
 import { ReleaseBuildMonitorView } from "@/ui/dashboard/ReleaseBuildMonitorView";
@@ -741,6 +745,57 @@ export default function Dashboard({
       dependencyResult.ecrStatus === "created"
         ? "ECR repo: created"
         : "ECR repo: already exists";
+    let ensuredOidcRoleArn = config.integrations?.aws?.oidcRoleArn;
+    const backendProfile = config.integrations?.aws?.backend?.profile?.trim();
+    const backendRegion = config.integrations?.aws?.backend?.region?.trim();
+    if (backendProfile && backendRegion) {
+      const oidcEnsure = await ensureGithubOidcRoleForDeployments({
+        profile: backendProfile,
+        region: backendRegion,
+      });
+      if (!oidcEnsure.ok) {
+        setReleaseBuildMonitor({
+          tag: requestedTag,
+          stage: "failed",
+          message: oidcEnsure.message,
+          preflightSummary,
+        });
+        return;
+      }
+      ensuredOidcRoleArn = oidcEnsure.roleArn;
+      const nextConfig = syncProjects({
+        ...config,
+        integrations: {
+          ...(config.integrations ?? {}),
+          aws: {
+            ...(config.integrations?.aws ?? { connected: true }),
+            oidcRoleArn: ensuredOidcRoleArn,
+            backend: config.integrations?.aws?.backend,
+            backendChecks: config.integrations?.aws?.backendChecks,
+          },
+        },
+      });
+      saveConfig(nextConfig);
+      onConfigUpdate?.(nextConfig);
+    }
+    const bootstrapResult = await bootstrapGithubRepoVariables({
+      projectPath: currentProject.path,
+      projectName: currentProject.name,
+      awsRegion: config.integrations?.aws?.backend?.region,
+      oidcRoleArn: ensuredOidcRoleArn,
+    });
+    const varsValidation = await validateGithubRepoVariablesForRelease({
+      projectPath: currentProject.path,
+    });
+    if (!varsValidation.ok) {
+      setReleaseBuildMonitor({
+        tag: requestedTag,
+        stage: "failed",
+        message: `${varsValidation.message}${bootstrapResult.configured ? "" : ` ${bootstrapResult.message ?? ""}`}`.trim(),
+        preflightSummary,
+      });
+      return;
+    }
 
     const result = await createReleaseTagForProject(currentProject.path, requestedTag);
     if (!result.ok) {
@@ -800,26 +855,10 @@ export default function Dashboard({
         "Missing AWS_REGION or ECR_REPOSITORY repo variables for release image resolution."
       )
     ) {
-      const bootstrapResult = await bootstrapGithubRepoVariables({
+      resolvedImage = await resolveReleaseImageForTag({
         projectPath: currentProject.path,
-        projectName: currentProject.name,
-        awsRegion: config.integrations?.aws?.backend?.region,
+        tag: result.tag,
       });
-      if (bootstrapResult.configured) {
-        resolvedImage = await resolveReleaseImageForTag({
-          projectPath: currentProject.path,
-          tag: result.tag,
-        });
-      } else {
-        setReleaseBuildMonitor({
-          tag: result.tag,
-          stage: "failed",
-          message: `${resolvedImage.message} ${bootstrapResult.message ?? "GitHub repo variable bootstrap was skipped."}`,
-          runUrl: resolvedImage.runUrl,
-          preflightSummary,
-        });
-        return;
-      }
     }
     if (!resolvedImage.ok) {
       setReleaseBuildMonitor({
