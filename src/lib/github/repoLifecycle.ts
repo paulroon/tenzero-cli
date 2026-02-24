@@ -40,7 +40,9 @@ function parseGitHubRepoFromOrigin(originUrl: string): RepoRef | null {
   if (sshMatch?.[1] && sshMatch[2]) {
     return { owner: sshMatch[1], repo: sshMatch[2] };
   }
-  const httpsMatch = originUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i);
+  const httpsMatch = originUrl.match(
+    /^https:\/\/(?:[^@/]+@)?github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i
+  );
   if (httpsMatch?.[1] && httpsMatch[2]) {
     return { owner: httpsMatch[1], repo: httpsMatch[2] };
   }

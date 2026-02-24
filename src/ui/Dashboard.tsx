@@ -385,10 +385,12 @@ export default function Dashboard({
         const remoteDeleteResult = await maybeDeleteGithubRepoForProject(
           currentProject.path
         );
-        if (
-          remoteDeleteResult.attempted &&
-          remoteDeleteResult.message.startsWith("Failed to delete remote GitHub repo")
-        ) {
+        if (!remoteDeleteResult.attempted) {
+          throw new Error(
+            `Remote GitHub repo deletion was requested but not attempted: ${remoteDeleteResult.message}`
+          );
+        }
+        if (remoteDeleteResult.message.startsWith("Failed to delete remote GitHub repo")) {
           throw new Error(remoteDeleteResult.message);
         }
       }
