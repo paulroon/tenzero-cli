@@ -29,6 +29,18 @@ function readyConfig(): TzConfig {
   };
 }
 
+function withMaterialize<T extends Record<string, unknown>>(overrides: T): T {
+  return {
+    materializeInfra: () => ({ directoryPath: "/tmp/.tz/infra/test", filePaths: [] }),
+    loadReleaseConfig: () => ({
+      config: { version: "1.2.3", tagPrefix: "v" },
+      exists: true,
+    }),
+    runGitPreflight: async () => undefined,
+    ...overrides,
+  };
+}
+
 describe("deployments commands", () => {
   test("returns not handled for non-deployments args", async () => {
     const result = await maybeRunDeploymentsCommand(["foo"]);
@@ -38,18 +50,20 @@ describe("deployments commands", () => {
   test("fails fast with gate remediation message", async () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(["deployments", "plan", "--env", "test"], {
-      loadUserConfig: () => readyConfig(),
-      evaluateGate: () => ({
-        allowed: false,
-        issues: [
-          {
-            check: "aws-connected",
-            message: "AWS integration is not connected.",
-            remediation: "Connect AWS in Settings > Deployments.",
-          },
-        ],
+      ...withMaterialize({
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({
+          allowed: false,
+          issues: [
+            {
+              check: "aws-connected",
+              message: "AWS integration is not connected.",
+              remediation: "Connect AWS in Settings > Deployments.",
+            },
+          ],
+        }),
+        writeLine: (line) => lines.push(line),
       }),
-      writeLine: (line) => lines.push(line),
     });
     expect(result.exitCode).toBe(1);
     expect(lines.join("\n")).toContain("Deployments gate blocked:");
@@ -59,16 +73,18 @@ describe("deployments commands", () => {
   test("plan command prints summary and exits 0", async () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(["deployments", "plan", "--env", "test"], {
-      loadUserConfig: () => readyConfig(),
-      evaluateGate: () => ({ allowed: true, issues: [] }),
-      assertMode: () => undefined,
-      createAdapter: () => ({} as never),
-      runPlan: async () => ({
-        status: "drifted",
-        summary: { add: 1, change: 0, destroy: 0 },
-        driftDetected: true,
+      ...withMaterialize({
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({ allowed: true, issues: [] }),
+        assertMode: () => undefined,
+        createAdapter: () => ({} as never),
+        runPlan: async () => ({
+          status: "drifted",
+          summary: { add: 1, change: 0, destroy: 0 },
+          driftDetected: true,
+        }),
+        writeLine: (line) => lines.push(line),
       }),
-      writeLine: (line) => lines.push(line),
     });
     expect(result.exitCode).toBe(0);
     expect(lines.join("\n")).toContain("Plan summary: add=1, change=0, destroy=0");
@@ -79,7 +95,7 @@ describe("deployments commands", () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(
       ["deployments", "destroy", "--env", "prod"],
-      {
+      withMaterialize({
         loadUserConfig: () => readyConfig(),
         evaluateGate: () => ({ allowed: true, issues: [] }),
         assertMode: () => undefined,
@@ -88,7 +104,7 @@ describe("deployments commands", () => {
           throw new Error("DESTROY_CONFIRMATION_REQUIRED: Provide explicit destroy confirmation.");
         },
         writeLine: (line) => lines.push(line),
-      }
+      })
     );
     expect(result.exitCode).toBe(1);
     expect(lines.join("\n")).toContain("DESTROY_CONFIRMATION_REQUIRED");
@@ -97,20 +113,22 @@ describe("deployments commands", () => {
   test("apply command exits non-zero when adapter returns errors", async () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(["deployments", "apply", "--env", "test"], {
-      loadUserConfig: () => readyConfig(),
-      evaluateGate: () => ({ allowed: true, issues: [] }),
-      assertMode: () => undefined,
-      createAdapter: () => ({} as never),
-      runReport: async () => ({
-        status: "healthy",
-        driftDetected: false,
+      ...withMaterialize({
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({ allowed: true, issues: [] }),
+        assertMode: () => undefined,
+        createAdapter: () => ({} as never),
+        runReport: async () => ({
+          status: "healthy",
+          driftDetected: false,
+        }),
+        runApply: async () => ({
+          status: "failed",
+          summary: { add: 0, change: 0, destroy: 0 },
+          errors: [{ code: "TF_CMD_FAILED", message: "apply failed" }],
+        }),
+        writeLine: (line) => lines.push(line),
       }),
-      runApply: async () => ({
-        status: "failed",
-        summary: { add: 0, change: 0, destroy: 0 },
-        errors: [{ code: "TF_CMD_FAILED", message: "apply failed" }],
-      }),
-      writeLine: (line) => lines.push(line),
     });
     expect(result.exitCode).toBe(1);
     expect(lines.join("\n")).toContain("[TF_CMD_FAILED] apply failed");
@@ -119,19 +137,21 @@ describe("deployments commands", () => {
   test("apply command blocks on preflight drift unless confirmed", async () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(["deployments", "apply", "--env", "uat"], {
-      loadUserConfig: () => readyConfig(),
-      evaluateGate: () => ({ allowed: true, issues: [] }),
-      assertMode: () => undefined,
-      createAdapter: () => ({} as never),
-      runReport: async () => ({
-        status: "drifted",
-        driftDetected: true,
+      ...withMaterialize({
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({ allowed: true, issues: [] }),
+        assertMode: () => undefined,
+        createAdapter: () => ({} as never),
+        runReport: async () => ({
+          status: "drifted",
+          driftDetected: true,
+        }),
+        runApply: async () => ({
+          status: "healthy",
+          summary: { add: 0, change: 1, destroy: 0 },
+        }),
+        writeLine: (line) => lines.push(line),
       }),
-      runApply: async () => ({
-        status: "healthy",
-        summary: { add: 0, change: 1, destroy: 0 },
-      }),
-      writeLine: (line) => lines.push(line),
     });
     expect(result.exitCode).toBe(1);
     expect(lines.join("\n")).toContain("Pre-apply drift check failed");
@@ -141,7 +161,7 @@ describe("deployments commands", () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(
       ["deployments", "apply", "--env", "prod", "--confirm-drift"],
-      {
+      withMaterialize({
         loadUserConfig: () => readyConfig(),
         evaluateGate: () => ({ allowed: true, issues: [] }),
         assertMode: () => undefined,
@@ -155,7 +175,7 @@ describe("deployments commands", () => {
           summary: { add: 0, change: 1, destroy: 0 },
         }),
         writeLine: (line) => lines.push(line),
-      }
+      })
     );
     expect(result.exitCode).toBe(1);
     expect(lines.join("\n")).toContain("--confirm-drift-prod");
@@ -165,7 +185,7 @@ describe("deployments commands", () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(
       ["deployments", "apply", "--env", "test", "--confirm-drift"],
-      {
+      withMaterialize({
         loadUserConfig: () => readyConfig(),
         evaluateGate: () => ({ allowed: true, issues: [] }),
         assertMode: () => undefined,
@@ -179,7 +199,7 @@ describe("deployments commands", () => {
           summary: { add: 0, change: 1, destroy: 0 },
         }),
         writeLine: (line) => lines.push(line),
-      }
+      })
     );
     expect(result.exitCode).toBe(0);
     expect(lines.join("\n")).toContain("Apply summary: add=0, change=1, destroy=0");
@@ -188,15 +208,17 @@ describe("deployments commands", () => {
   test("report command prints remediation hints for drifted", async () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(["deployments", "report", "--env", "uat"], {
-      loadUserConfig: () => readyConfig(),
-      evaluateGate: () => ({ allowed: true, issues: [] }),
-      assertMode: () => undefined,
-      createAdapter: () => ({} as never),
-      runReport: async () => ({
-        status: "drifted",
-        driftDetected: true,
+      ...withMaterialize({
+        loadUserConfig: () => readyConfig(),
+        evaluateGate: () => ({ allowed: true, issues: [] }),
+        assertMode: () => undefined,
+        createAdapter: () => ({} as never),
+        runReport: async () => ({
+          status: "drifted",
+          driftDetected: true,
+        }),
+        writeLine: (line) => lines.push(line),
       }),
-      writeLine: (line) => lines.push(line),
     });
     expect(result.exitCode).toBe(0);
     expect(lines.join("\n")).toContain("Remediation: review plan and apply explicitly for 'uat'.");
@@ -206,7 +228,7 @@ describe("deployments commands", () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(
       ["deployments", "report", "--env", "test", "--watch", "--max-cycles", "2", "--interval-seconds", "0"],
-      {
+      withMaterialize({
         loadUserConfig: () => readyConfig(),
         evaluateGate: () => ({ allowed: true, issues: [] }),
         assertMode: () => undefined,
@@ -220,10 +242,68 @@ describe("deployments commands", () => {
           ];
         },
         writeLine: (line) => lines.push(line),
-      }
+      })
     );
     expect(result.exitCode).toBe(0);
     expect(lines.join("\n")).toContain("Refresh cycle 1:");
     expect(lines.join("\n")).toContain("Refresh cycle 2:");
+  });
+
+  test("fails fast when infra materialization fails", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(["deployments", "plan", "--env", "prod"], {
+      loadUserConfig: () => readyConfig(),
+      loadReleaseConfig: () => ({
+        config: { version: "1.0.0", tagPrefix: "v" },
+        exists: true,
+      }),
+      evaluateGate: () => ({ allowed: true, issues: [] }),
+      assertMode: () => undefined,
+      createAdapter: () => ({} as never),
+      runGitPreflight: async () => undefined,
+      materializeInfra: () => {
+        throw new Error("Template 'nextjs' has no infra definition.");
+      },
+      writeLine: (line) => lines.push(line),
+    });
+    expect(result.exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("has no infra definition");
+  });
+
+  test("blocks deployment when release config is missing", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(["deployments", "plan", "--env", "prod"], {
+      loadUserConfig: () => readyConfig(),
+      loadReleaseConfig: () => ({ config: null, exists: false }),
+      evaluateGate: () => ({ allowed: true, issues: [] }),
+      assertMode: () => undefined,
+      createAdapter: () => ({} as never),
+      runGitPreflight: async () => undefined,
+      materializeInfra: () => ({ directoryPath: "/tmp/.tz/infra/prod", filePaths: [] }),
+      writeLine: (line) => lines.push(line),
+    });
+    expect(result.exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("release config not found");
+  });
+
+  test("blocks deployment when git preflight fails", async () => {
+    const lines: string[] = [];
+    const result = await maybeRunDeploymentsCommand(["deployments", "plan", "--env", "prod"], {
+      loadUserConfig: () => readyConfig(),
+      loadReleaseConfig: () => ({
+        config: { version: "1.0.0", tagPrefix: "v" },
+        exists: true,
+      }),
+      evaluateGate: () => ({ allowed: true, issues: [] }),
+      assertMode: () => undefined,
+      createAdapter: () => ({} as never),
+      runGitPreflight: async () => {
+        throw new Error("Deployment blocked: commit or stash changes first.");
+      },
+      materializeInfra: () => ({ directoryPath: "/tmp/.tz/infra/prod", filePaths: [] }),
+      writeLine: (line) => lines.push(line),
+    });
+    expect(result.exitCode).toBe(1);
+    expect(lines.join("\n")).toContain("commit or stash changes");
   });
 });

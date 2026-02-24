@@ -1,34 +1,58 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Box, Text, useInput } from "ink";
 import { render } from "ink";
-import { Alert, ConfirmInput, Select } from "@inkjs/ui";
+import { Alert, Select } from "@inkjs/ui";
 import { useBackKey } from "@/hooks/useBackKey";
 import { useCurrentProject } from "@/contexts/CurrentProjectContext";
 import {
   syncProjects,
   saveConfig,
   DEFAULT_EDITOR,
+  loadProjectReleaseConfigWithError,
   type TzProjectConfig,
   type TzConfig,
 } from "@/lib/config";
+import { loadProjectBuilderConfig } from "@/lib/config/projectBuilder";
+import { loadProjectConfig, saveProjectConfig } from "@/lib/config/project";
 import { getMakefileTargets } from "@/lib/makefile";
 import { callShell } from "@/lib/shell";
 import { setResumeProjectPath } from "@/lib/resumeState";
 import { getInkInstance, setInkInstance } from "@/lib/inkInstance";
 import { getErrorMessage } from "@/lib/errors";
 import { evaluateProjectDeleteGuard } from "@/lib/deployments/deleteGuard";
+import { maybeRunDeploymentsCommand } from "@/lib/deployments/commands";
+import { evaluateInfraConfigReadiness } from "@/lib/deployments/infraConfigCheck";
+import { materializeInfraForEnvironment } from "@/lib/deployments/materialize";
+import {
+  createReleaseTagForProject,
+  ensureReleaseTagForProject,
+  pushReleaseTagToOrigin,
+  suggestNextReleaseTag,
+} from "@/lib/release/releaseTag";
+import { waitForReleaseWorkflowCompletion } from "@/lib/github/actionsMonitor";
+import { maybeDeleteGithubRepoForProject } from "@/lib/github/repoLifecycle";
+import { resolveReleaseImageForTag } from "@/lib/github/releaseValidation";
 import App from "@/ui/App";
+import { DeleteProjectView } from "@/ui/dashboard/DeleteProjectView";
+import { ReleaseBuildMonitorView } from "@/ui/dashboard/ReleaseBuildMonitorView";
+import { PendingApplyView } from "@/ui/dashboard/PendingApplyView";
+import { EnvironmentActionsView } from "@/ui/dashboard/EnvironmentActionsView";
+import { ReleaseSelectorView } from "@/ui/dashboard/ReleaseSelectorView";
+import { InfraEnvironmentsListView } from "@/ui/dashboard/InfraEnvironmentsListView";
+import { DashboardHomeView } from "@/ui/dashboard/DashboardHomeView";
+import { ConfirmDestroyView } from "@/ui/dashboard/ConfirmDestroyView";
+import { ConfirmDriftView } from "@/ui/dashboard/ConfirmDriftView";
+import type {
+  DeploymentStep,
+  DeploymentStepId,
+  DeploymentStepStatus,
+  PlannedChange,
+  ReleaseBuildMonitorState,
+} from "@/ui/dashboard/types";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-const RED = "\x1b[31m";
-const RESET = "\x1b[0m";
-
-const PROJECT_ACTIONS = [
-  { label: `${RED}Delete project${RESET}`, value: "delete" },
-] as const;
-
-type ActionChoice = (typeof PROJECT_ACTIONS)[number]["value"];
+type ActionChoice = "delete";
 
 type Props = {
   onBack: () => void;
@@ -47,6 +71,22 @@ function isPermissionError(error: unknown): boolean {
 
 function hasDockerComposeFile(projectPath: string): boolean {
   return existsSync(join(projectPath, "docker-compose.yml"));
+}
+
+function toUiDeploymentError(logs: string[]): string {
+  if (logs.some((line) => line.includes("Pre-apply drift check failed"))) {
+    return "Drift detected. Confirm in this screen to continue deployment.";
+  }
+  if (logs.some((line) => line.includes("--confirm-drift-prod"))) {
+    return "Production drift confirmation is required. Confirm in this screen to continue.";
+  }
+  if (logs.some((line) => line.includes("--confirm-drift"))) {
+    return "Drift confirmation is required. Confirm in this screen to continue.";
+  }
+  if (logs.some((line) => line.startsWith("Usage: tz deployments"))) {
+    return "Deployment action failed due to invalid internal arguments. Please retry from this screen.";
+  }
+  return logs[logs.length - 1] ?? "Deployment action failed.";
 }
 
 function detectHostPortFromCompose(projectPath: string): string | null {
@@ -103,13 +143,79 @@ export default function Dashboard({
 }: Props) {
   const { currentProject, clearCurrentProject } = useCurrentProject();
   const [choice, setChoice] = useState<ActionChoice | null>(null);
+  const [deleteRemoteRepoOnDelete, setDeleteRemoteRepoOnDelete] = useState<boolean | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [menuView, setMenuView] = useState<"main" | "actions" | "make">("main");
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<string | null>(null);
+  const [confirmDestroyEnvironmentId, setConfirmDestroyEnvironmentId] = useState<string | null>(
+    null
+  );
+  const [confirmDriftEnvironmentId, setConfirmDriftEnvironmentId] = useState<string | null>(null);
+  const [pendingApplyEnvironmentId, setPendingApplyEnvironmentId] = useState<string | null>(null);
+  const [editReleaseEnvironmentId, setEditReleaseEnvironmentId] = useState<string | null>(null);
+  const [createReleaseEntry, setCreateReleaseEntry] = useState(false);
+  const [loadingReleaseTags, setLoadingReleaseTags] = useState(false);
+  const [availableReleaseTags, setAvailableReleaseTags] = useState<string[]>([]);
+  const [suggestedReleaseTag, setSuggestedReleaseTag] = useState<string>("");
+  const [releaseBuildMonitor, setReleaseBuildMonitor] = useState<ReleaseBuildMonitorState | null>(
+    null
+  );
+  const [deploymentNotice, setDeploymentNotice] = useState<string | null>(null);
+  const [deploymentError, setDeploymentError] = useState<string | null>(null);
+  const [deploymentLogs, setDeploymentLogs] = useState<string[]>([]);
+  const [deploymentPlannedChanges, setDeploymentPlannedChanges] = useState<PlannedChange[]>([]);
+  const [deploymentSteps, setDeploymentSteps] = useState<DeploymentStep[]>([]);
+  const [deploymentStartedAt, setDeploymentStartedAt] = useState<number | null>(null);
+  const [deploymentInProgress, setDeploymentInProgress] = useState(false);
+  const [deploymentRefreshKey, setDeploymentRefreshKey] = useState(0);
+  const deploymentActionCooldownUntilRef = useRef(0);
 
   useBackKey(() => {
+    if (
+      releaseBuildMonitor &&
+      (releaseBuildMonitor.stage === "pushing" ||
+        releaseBuildMonitor.stage === "waiting" ||
+        releaseBuildMonitor.stage === "running")
+    ) {
+      return;
+    }
+    if (releaseBuildMonitor) {
+      setReleaseBuildMonitor(null);
+      return;
+    }
+    if (confirmDestroyEnvironmentId) {
+      setConfirmDestroyEnvironmentId(null);
+      setDeploymentError(null);
+      return;
+    }
+    if (confirmDriftEnvironmentId) {
+      setConfirmDriftEnvironmentId(null);
+      setDeploymentError(null);
+      return;
+    }
+    if (editReleaseEnvironmentId) {
+      closeReleaseSelector();
+      setLoadingReleaseTags(false);
+      setDeploymentError(null);
+      return;
+    }
+    if (pendingApplyEnvironmentId) {
+      setPendingApplyEnvironmentId(null);
+      setDeploymentNotice(null);
+      setDeploymentSteps((prev) =>
+        prev.map((step) =>
+          step.status === "pending" ? { ...step, status: "skipped" } : step
+        )
+      );
+      return;
+    }
     if (choice !== null) {
       setChoice(null);
+      setDeleteRemoteRepoOnDelete(null);
       setDeleteError(null);
+    } else if (selectedEnvironmentId) {
+      setSelectedEnvironmentId(null);
+      setDeploymentError(null);
     } else if (menuView !== "main") {
       setMenuView("main");
     } else {
@@ -176,6 +282,35 @@ export default function Dashboard({
     () => (currentProject ? getMakefileTargets(currentProject.path) : []),
     [currentProject?.path]
   );
+  const templateConfig = useMemo(
+    () => (currentProject ? loadProjectBuilderConfig(currentProject.type) : null),
+    [currentProject?.type]
+  );
+  const projectStateConfig = useMemo(
+    () => (currentProject ? loadProjectConfig(currentProject.path) : null),
+    [currentProject?.path, deploymentRefreshKey]
+  );
+  const infraEnvironments = templateConfig?.infra?.environments ?? [];
+  const infraConfigReadiness = useMemo(
+    () => (currentProject ? evaluateInfraConfigReadiness(currentProject.path) : null),
+    [currentProject?.path, deploymentRefreshKey]
+  );
+
+  useEffect(() => {
+    if (!currentProject || menuView !== "actions" || !selectedEnvironmentId) return;
+    const readiness = evaluateInfraConfigReadiness(currentProject.path);
+    if (readiness.ready) return;
+    try {
+      materializeInfraForEnvironment(currentProject.path, selectedEnvironmentId, {
+        backendRegion: config.integrations?.aws?.backend?.region,
+      });
+      setDeploymentRefreshKey((v) => v + 1);
+    } catch (error) {
+      setDeploymentError(
+        getErrorMessage(error, "Failed to generate infra configuration for this environment.")
+      );
+    }
+  }, [currentProject, menuView, selectedEnvironmentId]);
 
   const handleMakeSelect = async (target: string) => {
     if (!currentProject) return;
@@ -194,7 +329,7 @@ export default function Dashboard({
         const details = deleteGuard.blocks
           .map(
             (block) =>
-              `${block.environmentId}: ${block.reason}. Run '${block.remediationCommand}'.`
+              `${block.environmentId}: ${block.reason}. ${block.remediation}`
           )
           .join("\n");
         throw new Error(
@@ -218,6 +353,17 @@ export default function Dashboard({
       };
 
       await stopDockerIfPossible();
+      if (deleteRemoteRepoOnDelete) {
+        const remoteDeleteResult = await maybeDeleteGithubRepoForProject(
+          currentProject.path
+        );
+        if (
+          remoteDeleteResult.attempted &&
+          remoteDeleteResult.message.startsWith("Failed to delete remote GitHub repo")
+        ) {
+          throw new Error(remoteDeleteResult.message);
+        }
+      }
       try {
         rmSync(currentProject.path, { recursive: true });
       } catch (err) {
@@ -238,52 +384,637 @@ export default function Dashboard({
 
   const handleDeleteCancel = () => {
     setChoice(null);
+    setDeleteRemoteRepoOnDelete(null);
     setDeleteError(null);
+  };
+
+  const getEnvironmentStatus = (environmentId: string): string => {
+    const status = projectStateConfig?.deploymentState?.environments?.[environmentId]?.lastStatus;
+    if (status) return status;
+    const hasProviderOutputs = Object.values(
+      projectStateConfig?.environmentOutputs?.[environmentId] ?? {}
+    ).some((record) => record.source === "providerOutput");
+    return hasProviderOutputs ? "unknown" : "not deployed";
+  };
+
+  const isEnvironmentDeployed = (environmentId: string): boolean => {
+    const status = getEnvironmentStatus(environmentId);
+    return (
+      status === "healthy" ||
+      status === "drifted" ||
+      status === "deploying" ||
+      status === "failed"
+    );
+  };
+
+  const runDeploymentAction = async (
+    argv: string[],
+    successNotice: string,
+    options?: {
+      onLogLine?: (line: string) => void;
+      resetLogs?: boolean;
+      bypassCooldown?: boolean;
+    }
+  ): Promise<{ exitCode: number; logs: string[]; planChanges?: PlannedChange[] }> => {
+    const now = Date.now();
+    if (
+      deploymentInProgress ||
+      (!options?.bypassCooldown && now < deploymentActionCooldownUntilRef.current)
+    ) {
+      return { exitCode: 1, logs: [] };
+    }
+    setDeploymentInProgress(true);
+    setDeploymentError(null);
+    setDeploymentNotice(null);
+    if (options?.resetLogs !== false) {
+      setDeploymentLogs([]);
+    }
+    const logs: string[] = [];
+    try {
+      const result = await maybeRunDeploymentsCommand(argv, {
+        getCwd: () => currentProject.path,
+        writeLine: (line) => {
+          const chunks = line.split(/\r?\n/).filter((entry) => entry.trim().length > 0);
+          const nextLines = chunks.length > 0 ? chunks : [line];
+          for (const nextLine of nextLines) {
+            logs.push(nextLine);
+            options?.onLogLine?.(nextLine);
+          }
+          setDeploymentLogs(logs.slice(-40));
+        },
+      });
+      setDeploymentLogs(logs.slice(-40));
+      if (result.exitCode === 0) {
+        setDeploymentNotice(successNotice);
+      } else {
+        setDeploymentError(toUiDeploymentError(logs));
+      }
+      setDeploymentRefreshKey((v) => v + 1);
+      return { exitCode: result.exitCode, logs, planChanges: result.planChanges };
+    } finally {
+      // Guard against Enter key repeat / duplicate onChange pulses right after completion.
+      deploymentActionCooldownUntilRef.current = Date.now() + 800;
+      setDeploymentInProgress(false);
+    }
+  };
+
+  const runApplyForEnvironment = async (
+    environmentId: string,
+    options: {
+      includesPlanStep: boolean;
+      confirmDrift: boolean;
+      setStepStatus: (id: DeploymentStepId, status: DeploymentStepStatus) => void;
+      getStepStatus: (id: DeploymentStepId) => DeploymentStepStatus | undefined;
+    }
+  ): Promise<void> => {
+    options.setStepStatus("drift-check", "running");
+    let applyStarted = false;
+    const args = ["deployments", "apply", "--env", environmentId];
+    if (options.confirmDrift) {
+      args.push(environmentId === "prod" ? "--confirm-drift-prod" : "--confirm-drift");
+    }
+    const result = await runDeploymentAction(args, `Deploy completed for '${environmentId}'.`, {
+      resetLogs: options.includesPlanStep ? false : true,
+      bypassCooldown: options.includesPlanStep,
+      onLogLine: (line) => {
+        if (line.startsWith("Pre-apply drift check passed")) {
+          options.setStepStatus("drift-check", "success");
+          options.setStepStatus("apply", "running");
+          applyStarted = true;
+          return;
+        }
+        if (line.startsWith("Starting apply")) {
+          options.setStepStatus("apply", "running");
+          applyStarted = true;
+          return;
+        }
+        if (line.startsWith("Pre-apply drift check failed")) {
+          options.setStepStatus("drift-check", "failed");
+          options.setStepStatus("apply", "skipped");
+        }
+      },
+    });
+    if (result.exitCode !== 0) {
+      const driftCheckState = options.getStepStatus("drift-check");
+      if (!applyStarted) {
+        if (driftCheckState === "running" || driftCheckState === "pending") {
+          options.setStepStatus("drift-check", "failed");
+        }
+        options.setStepStatus("apply", "skipped");
+      } else {
+        if (driftCheckState === "running" || driftCheckState === "pending") {
+          options.setStepStatus("drift-check", "success");
+        }
+        options.setStepStatus("apply", "failed");
+      }
+      const requiresDriftConfirmation = result.logs.some((line) =>
+        line.includes("Pre-apply drift check failed")
+      );
+      if (requiresDriftConfirmation) {
+        setConfirmDriftEnvironmentId(environmentId);
+        setDeploymentError(
+          `Drift detected for '${environmentId}'. Confirm to continue deployment with explicit drift acknowledgement.`
+        );
+      }
+      return;
+    }
+    if (
+      options.getStepStatus("drift-check") === "running" ||
+      options.getStepStatus("drift-check") === "pending"
+    ) {
+      options.setStepStatus("drift-check", "success");
+    }
+    options.setStepStatus("apply", "success");
+  };
+
+  const handleDeployEnvironment = async (
+    environmentId: string,
+    confirmDrift = false
+  ): Promise<void> => {
+    const selectedRelease = projectStateConfig?.releaseState?.environments?.[environmentId];
+    if (selectedRelease?.selectedReleaseTag && !selectedRelease.selectedImageRef) {
+      setDeploymentError(
+        `Release '${selectedRelease.selectedReleaseTag}' is missing a validated release reference. Re-select the release to validate CI and continue.`
+      );
+      return;
+    }
+
+    const releaseTagResult = await ensureReleaseTagForProject(currentProject.path);
+    if (!releaseTagResult.ok) {
+      setDeploymentError(releaseTagResult.message);
+      setDeploymentLogs((prev) => [...prev.slice(-39), releaseTagResult.message]);
+      return;
+    }
+    if (releaseTagResult.created) {
+      const msg = `Created release '${releaseTagResult.tag}' from .tz/release.yaml for this deployment.`;
+      setDeploymentNotice(msg);
+      setDeploymentLogs((prev) => [...prev.slice(-39), msg]);
+    } else {
+      const msg = `Using release '${releaseTagResult.tag}'.`;
+      setDeploymentLogs((prev) => [...prev.slice(-39), msg]);
+    }
+
+    setPendingApplyEnvironmentId(null);
+    const includesPlanStep = environmentId === "prod";
+    const initialSteps: DeploymentStep[] = [];
+    if (includesPlanStep) {
+      initialSteps.push({ id: "plan", label: "Plan", status: "pending" });
+    }
+    initialSteps.push(
+      { id: "drift-check", label: "Drift check", status: "pending" },
+      { id: "apply", label: "Apply", status: "pending" }
+    );
+    const stepStatusById: Partial<Record<DeploymentStepId, DeploymentStepStatus>> = Object.fromEntries(
+      initialSteps.map((step) => [step.id, step.status])
+    );
+    const setStepStatus = (id: DeploymentStepId, status: DeploymentStepStatus) => {
+      stepStatusById[id] = status;
+      setDeploymentSteps((prev) =>
+        prev.map((step) => (step.id === id ? { ...step, status } : step))
+      );
+    };
+    setDeploymentSteps(initialSteps);
+    setDeploymentStartedAt(Date.now());
+    setDeploymentPlannedChanges([]);
+
+    if (environmentId === "prod") {
+      setStepStatus("plan", "running");
+      const planResult = await runDeploymentAction(
+        ["deployments", "plan", "--env", environmentId],
+        `Plan completed for '${environmentId}'.`,
+        { resetLogs: true }
+      );
+      if (planResult.exitCode !== 0) {
+        setStepStatus("plan", "failed");
+        setStepStatus("drift-check", "skipped");
+        setStepStatus("apply", "skipped");
+        setDeploymentError(
+          "Production deploy requires a fresh plan. Resolve plan issues, then retry deploy."
+        );
+        return;
+      }
+      setDeploymentPlannedChanges(planResult.planChanges ?? []);
+      setStepStatus("plan", "success");
+      if (!confirmDrift) {
+        setPendingApplyEnvironmentId(environmentId);
+        setDeploymentNotice(
+          `Plan is ready for '${environmentId}'. Review planned provider changes, then confirm apply.`
+        );
+        return;
+      }
+    }
+
+    await runApplyForEnvironment(environmentId, {
+      includesPlanStep,
+      confirmDrift,
+      setStepStatus,
+      getStepStatus: (id) => stepStatusById[id],
+    });
+  };
+
+  const handleDestroyEnvironmentConfirm = async () => {
+    if (!confirmDestroyEnvironmentId) return;
+    const args = [
+      "deployments",
+      "destroy",
+      "--env",
+      confirmDestroyEnvironmentId,
+      "--confirm-env",
+      confirmDestroyEnvironmentId,
+      "--confirm",
+      `destroy ${confirmDestroyEnvironmentId}`,
+    ];
+    if (confirmDestroyEnvironmentId === "prod") {
+      args.push("--confirm-prod", "destroy prod permanently");
+    }
+    await runDeploymentAction(args, `Destroyed environment '${confirmDestroyEnvironmentId}'.`);
+    setConfirmDestroyEnvironmentId(null);
+  };
+
+  const setEnvironmentReleaseSelection = (
+    environmentId: string,
+    selection: { imageRef?: string; imageDigest?: string; releaseTag?: string }
+  ) => {
+    if (!projectStateConfig) return;
+    const nowIso = new Date().toISOString();
+    const selectedImageRef = selection.imageRef?.trim() || undefined;
+    const selectedImageDigest = selection.imageDigest?.trim() || undefined;
+    const selectedReleaseTag = selection.releaseTag?.trim() || undefined;
+    saveProjectConfig(currentProject.path, {
+      ...projectStateConfig,
+      releaseState: {
+        environments: {
+          ...(projectStateConfig.releaseState?.environments ?? {}),
+          [environmentId]: {
+            selectedImageRef,
+            selectedImageDigest,
+            selectedReleaseTag,
+            selectedAt: nowIso,
+          },
+        },
+      },
+    });
+    setDeploymentRefreshKey((v) => v + 1);
+    setDeploymentNotice(
+      !selectedReleaseTag && !selectedImageRef && !selectedImageDigest
+        ? `Cleared release selection for '${environmentId}'.`
+        : selectedReleaseTag
+        ? `Selected release '${selectedReleaseTag}' for '${environmentId}'.`
+        : `Selected release for '${environmentId}'.`
+    );
+  };
+
+  const closeReleaseSelector = () => {
+    setEditReleaseEnvironmentId(null);
+    setCreateReleaseEntry(false);
+    setAvailableReleaseTags([]);
+    setSuggestedReleaseTag("");
+  };
+
+  const handleCreateReleaseTagSubmit = async (
+    targetEnvironmentId: string,
+    requestedTag: string
+  ) => {
+    const result = await createReleaseTagForProject(currentProject.path, requestedTag);
+    if (!result.ok) {
+      setDeploymentError(result.message);
+      return;
+    }
+
+    setReleaseBuildMonitor({
+      tag: result.tag,
+      stage: "pushing",
+      message: `Publishing release '${result.tag}' to origin...`,
+    });
+    const pushResult = await pushReleaseTagToOrigin(currentProject.path, result.tag);
+    if (!pushResult.ok) {
+      setReleaseBuildMonitor({
+        tag: result.tag,
+        stage: "failed",
+        message: pushResult.message,
+      });
+      return;
+    }
+
+    const monitorResult = await waitForReleaseWorkflowCompletion({
+      projectPath: currentProject.path,
+      tag: result.tag,
+      onUpdate: (update) => {
+        setReleaseBuildMonitor({
+          tag: result.tag,
+          stage: update.stage === "completed" ? "completed" : update.stage,
+          message: update.message,
+          runUrl: update.runUrl,
+        });
+      },
+    });
+    if (!monitorResult.ok) {
+      setReleaseBuildMonitor({
+        tag: result.tag,
+        stage: "failed",
+        message: monitorResult.message,
+        runUrl: monitorResult.runUrl,
+      });
+      return;
+    }
+
+    const resolvedImage = await resolveReleaseImageForTag({
+      projectPath: currentProject.path,
+      tag: result.tag,
+    });
+    if (!resolvedImage.ok) {
+      setReleaseBuildMonitor({
+        tag: result.tag,
+        stage: "failed",
+        message: resolvedImage.message,
+        runUrl: resolvedImage.runUrl,
+      });
+      return;
+    }
+
+    setEnvironmentReleaseSelection(targetEnvironmentId, {
+      releaseTag: result.tag,
+      imageRef: resolvedImage.imageRef,
+      imageDigest: resolvedImage.imageDigest,
+    });
+    setReleaseBuildMonitor({
+      tag: result.tag,
+      stage: "completed",
+      message: "Release build is ready. Release reference validated for deployment.",
+      runUrl: resolvedImage.runUrl ?? monitorResult.runUrl,
+    });
+    setDeploymentLogs((prev) => [...prev.slice(-39), `Created release '${result.tag}'.`]);
+    closeReleaseSelector();
+  };
+
+  const openReleaseSelector = async (environmentId: string) => {
+    setDeploymentError(null);
+    setLoadingReleaseTags(true);
+    setCreateReleaseEntry(false);
+    setEditReleaseEnvironmentId(environmentId);
+
+    const suggestion = await suggestNextReleaseTag(currentProject.path);
+    if (suggestion.ok) {
+      setSuggestedReleaseTag(suggestion.tag);
+    } else {
+      setSuggestedReleaseTag("");
+    }
+
+    const releaseConfigResult = loadProjectReleaseConfigWithError(currentProject.path);
+    if (releaseConfigResult.error) {
+      setDeploymentError(releaseConfigResult.error);
+      setAvailableReleaseTags([]);
+      setLoadingReleaseTags(false);
+      return;
+    }
+    if (!releaseConfigResult.config) {
+      setDeploymentError(
+        "Release config not found. Expected .tz/release.yaml with release version settings."
+      );
+      setAvailableReleaseTags([]);
+      setLoadingReleaseTags(false);
+      return;
+    }
+
+    const tagsResult = await callShell(
+      "git",
+      ["tag", "--list", `${releaseConfigResult.config.tagPrefix}*`, "--sort=-v:refname"],
+      {
+        cwd: currentProject.path,
+        collect: true,
+        quiet: true,
+        throwOnNonZero: false,
+        stdin: "ignore",
+      }
+    );
+    if (tagsResult.exitCode !== 0) {
+      setDeploymentError(
+        (tagsResult.stderr || tagsResult.stdout || "Failed to list releases.").trim()
+      );
+      setAvailableReleaseTags([]);
+      setLoadingReleaseTags(false);
+      return;
+    }
+
+    const tags = (tagsResult.stdout ?? "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    setAvailableReleaseTags(tags);
+    setLoadingReleaseTags(false);
+  };
+
+  const handleConfirmDriftApply = async () => {
+    if (!confirmDriftEnvironmentId) return;
+    await handleDeployEnvironment(confirmDriftEnvironmentId, true);
+    setConfirmDriftEnvironmentId(null);
+  };
+
+  const handleConfirmPlannedApply = async () => {
+    if (!pendingApplyEnvironmentId) return;
+    const environmentId = pendingApplyEnvironmentId;
+    setPendingApplyEnvironmentId(null);
+    const stepStatusById: Partial<Record<DeploymentStepId, DeploymentStepStatus>> = {};
+    for (const step of deploymentSteps) {
+      stepStatusById[step.id] = step.status;
+    }
+    const setStepStatus = (id: DeploymentStepId, status: DeploymentStepStatus) => {
+      stepStatusById[id] = status;
+      setDeploymentSteps((prev) =>
+        prev.map((step) => (step.id === id ? { ...step, status } : step))
+      );
+    };
+    await runApplyForEnvironment(environmentId, {
+      includesPlanStep: true,
+      confirmDrift: false,
+      setStepStatus,
+      getStepStatus: (id) => stepStatusById[id],
+    });
   };
 
   if (choice === "delete") {
     return (
-      <Box flexDirection="column" gap={1}>
-        <Text color="red" bold>
-          Delete project
-        </Text>
-        <Text>
-          Permanently delete "{currentProject.name}" and all its files?
-        </Text>
-        {deleteError && (
-          <Box marginTop={1}>
-            <Alert variant="error" title="Delete failed">
-              {deleteError}
-            </Alert>
-          </Box>
-        )}
-        <Box marginTop={1}>
-          <ConfirmInput
-            defaultChoice="cancel"
-            onConfirm={handleDeleteConfirm}
-            onCancel={handleDeleteCancel}
-          />
-        </Box>
-      </Box>
+      <DeleteProjectView
+        projectName={currentProject.name}
+        deleteRemoteRepoOnDelete={deleteRemoteRepoOnDelete}
+        deleteError={deleteError}
+        onSelectDeleteRemote={setDeleteRemoteRepoOnDelete}
+        onCancel={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+      />
     );
   }
 
   const answers = currentProject.builderAnswers ?? {};
 
-  if (menuView === "actions") {
+  if (confirmDestroyEnvironmentId) {
     return (
-      <Box flexDirection="column" gap={1}>
-        <Text color="yellow" bold>
-          Actions
-        </Text>
-        <Select
-          options={PROJECT_ACTIONS.map((o) => ({
-            label: o.label,
-            value: o.value,
-          }))}
-          onChange={(value) => setChoice(value as ActionChoice)}
+      <ConfirmDestroyView
+        environmentId={confirmDestroyEnvironmentId}
+        error={deploymentError}
+        onConfirm={handleDestroyEnvironmentConfirm}
+        onCancel={() => setConfirmDestroyEnvironmentId(null)}
+      />
+    );
+  }
+
+  if (confirmDriftEnvironmentId) {
+    return (
+      <ConfirmDriftView
+        environmentId={confirmDriftEnvironmentId}
+        error={deploymentError}
+        onConfirm={handleConfirmDriftApply}
+        onCancel={() => setConfirmDriftEnvironmentId(null)}
+      />
+    );
+  }
+
+  if (releaseBuildMonitor) {
+    return (
+      <ReleaseBuildMonitorView
+        monitor={releaseBuildMonitor}
+        onClose={() => setReleaseBuildMonitor(null)}
+      />
+    );
+  }
+
+  if (pendingApplyEnvironmentId) {
+    return (
+      <PendingApplyView
+        environmentId={pendingApplyEnvironmentId}
+        deploymentPlannedChanges={deploymentPlannedChanges}
+        onProceed={() => {
+          void handleConfirmPlannedApply();
+        }}
+        onCancel={() => {
+          setPendingApplyEnvironmentId(null);
+          setDeploymentNotice("Apply cancelled. Plan remains available for review.");
+          setDeploymentSteps((prev) =>
+            prev.map((step) =>
+              step.status === "pending" ? { ...step, status: "skipped" } : step
+            )
+          );
+        }}
+      />
+    );
+  }
+
+  if (editReleaseEnvironmentId) {
+    const currentSelection =
+      projectStateConfig?.releaseState?.environments?.[editReleaseEnvironmentId];
+    return (
+      <ReleaseSelectorView
+        environmentId={editReleaseEnvironmentId}
+        loadingReleaseTags={loadingReleaseTags}
+        createReleaseEntry={createReleaseEntry}
+        currentSelection={currentSelection}
+        availableReleaseTags={availableReleaseTags}
+        suggestedReleaseTag={suggestedReleaseTag}
+        onCreateReleaseSubmit={(value) => {
+          const requestedTag = value.trim();
+          if (!requestedTag) {
+            setDeploymentError("Release value cannot be blank.");
+            return;
+          }
+          void (async () => {
+            const targetEnvironmentId = editReleaseEnvironmentId;
+            if (!targetEnvironmentId) {
+              setDeploymentError("No target environment selected for release.");
+              return;
+            }
+            await handleCreateReleaseTagSubmit(targetEnvironmentId, requestedTag);
+          })();
+        }}
+        onStartCreate={() => setCreateReleaseEntry(true)}
+        onClear={() => {
+          setEnvironmentReleaseSelection(editReleaseEnvironmentId, {});
+          closeReleaseSelector();
+        }}
+        onBack={closeReleaseSelector}
+        onSelectTag={(tag) => {
+          void (async () => {
+            setDeploymentError(null);
+            const resolvedImage = await resolveReleaseImageForTag({
+              projectPath: currentProject.path,
+              tag,
+            });
+            if (!resolvedImage.ok) {
+              setDeploymentError(
+                `Release '${tag}' is not build-ready: ${resolvedImage.message}`
+              );
+              return;
+            }
+            setEnvironmentReleaseSelection(editReleaseEnvironmentId, {
+              releaseTag: tag,
+              imageRef: resolvedImage.imageRef,
+              imageDigest: resolvedImage.imageDigest,
+            });
+            setDeploymentNotice(
+              `Selected release '${tag}' and validated its release reference.`
+            );
+            closeReleaseSelector();
+          })();
+        }}
+      />
+    );
+  }
+
+  if (menuView === "actions") {
+    if (selectedEnvironmentId) {
+      const status = getEnvironmentStatus(selectedEnvironmentId);
+      const canDestroy = isEnvironmentDeployed(selectedEnvironmentId);
+      const hasInfraConfig = infraConfigReadiness?.ready === true;
+      const firstTfPath = infraConfigReadiness?.tfFiles[0];
+      const releaseSelection =
+        projectStateConfig?.releaseState?.environments?.[selectedEnvironmentId];
+      return (
+        <EnvironmentActionsView
+          selectedEnvironmentId={selectedEnvironmentId}
+          status={status}
+          canDestroy={canDestroy}
+          hasInfraConfig={hasInfraConfig}
+          infraTfCount={infraConfigReadiness?.tfFiles.length ?? 0}
+          firstTfPath={firstTfPath}
+          releaseTag={releaseSelection?.selectedReleaseTag}
+          imageOverride={releaseSelection?.selectedImageRef}
+          imageDigest={releaseSelection?.selectedImageDigest}
+          deploymentNotice={deploymentNotice}
+          deploymentInProgress={deploymentInProgress}
+          deploymentSteps={deploymentSteps}
+          deploymentStartedAt={deploymentStartedAt}
+          deploymentPlannedChanges={deploymentPlannedChanges}
+          deploymentError={deploymentError}
+          deploymentLogs={deploymentLogs}
+          actionLocked={deploymentInProgress || Date.now() < deploymentActionCooldownUntilRef.current}
+          onBack={() => setSelectedEnvironmentId(null)}
+          onDeploy={() => {
+            void handleDeployEnvironment(selectedEnvironmentId);
+          }}
+          onSelectRelease={() => {
+            void openReleaseSelector(selectedEnvironmentId);
+          }}
+          onReport={() => {
+            void runDeploymentAction(
+              ["deployments", "report", "--env", selectedEnvironmentId],
+              `Report completed for '${selectedEnvironmentId}'.`
+            );
+          }}
+          onDestroy={() => setConfirmDestroyEnvironmentId(selectedEnvironmentId)}
         />
-      </Box>
+      );
+    }
+
+    return (
+      <InfraEnvironmentsListView
+        environments={infraEnvironments}
+        getEnvironmentStatus={getEnvironmentStatus}
+        onDeleteApp={() => {
+          setDeleteRemoteRepoOnDelete(null);
+          setDeleteError(null);
+          setChoice("delete");
+        }}
+        onSelectEnvironment={(environmentId) => setSelectedEnvironmentId(environmentId)}
+      />
     );
   }
 
@@ -310,38 +1041,13 @@ export default function Dashboard({
       : [{ label: "Actions", value: "actions" }];
 
   return (
-    <Box flexDirection="column" gap={1}>
-      <Text color="yellow" bold>
-        {currentProject.name}
-      </Text>
-      <Box flexDirection="column" paddingX={1} marginTop={1}>
-        <Text>
-          <Text dimColor>Path: </Text>
-          {currentProject.path}
-        </Text>
-        <Text>
-          <Text dimColor>Type: </Text>
-          {currentProject.type}
-        </Text>
-        {Object.keys(answers).length > 0 && (
-          <Box flexDirection="column" marginTop={1}>
-            <Text dimColor>Options:</Text>
-            {Object.entries(answers).map(([key, value]) => (
-              <Text key={key}>
-                {"  "}
-                {key}: {value}
-              </Text>
-            ))}
-          </Box>
-        )}
-      </Box>
-      <Box marginTop={1} flexDirection="column" gap={0}>
-        <Text dimColor>Commands:</Text>
-        <Select
-          options={mainMenuOptions}
-          onChange={(value) => setMenuView(value as "actions" | "make")}
-        />
-      </Box>
-    </Box>
+    <DashboardHomeView
+      projectName={currentProject.name}
+      projectPath={currentProject.path}
+      projectType={currentProject.type}
+      answers={answers}
+      mainMenuOptions={mainMenuOptions}
+      onMenuChange={(value) => setMenuView(value)}
+    />
   );
 }

@@ -4,6 +4,8 @@
 
 This runbook covers mandatory safety checks for `prod` plan/apply.
 
+In interactive mode, use: App Dashboard -> Infra Environments -> `prod`.
+
 ## Mandatory policies
 
 - `prod` apply requires a **fresh plan** (15-minute freshness window).
@@ -15,7 +17,9 @@ This runbook covers mandatory safety checks for `prod` plan/apply.
 1. Generate plan:
    - `tz deployments plan --env prod`
 2. Review summary and drift status.
-3. If drift is present, explicitly acknowledge when applying:
+3. If drift is present:
+   - Interactive app: confirm drift in the in-screen confirmation prompt.
+   - Shell mode: explicitly acknowledge when applying:
    - `tz deployments apply --env prod --confirm-drift-prod`
 4. If no drift is present:
    - `tz deployments apply --env prod`

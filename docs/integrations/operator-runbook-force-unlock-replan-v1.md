@@ -4,6 +4,8 @@
 
 This runbook defines safe recovery when lock state is stale and you must force-unlock.
 
+Interactive path: App Dashboard -> Infra Environments -> select environment.
+
 ## Preconditions
 
 - You have confirmed there is no active deployment run for the environment.
@@ -12,7 +14,7 @@ This runbook defines safe recovery when lock state is stale and you must force-u
 
 ## Procedure
 
-1. Gather current status:
+1. Gather current status (or use the Dashboard Report action):
    - `tz deployments report --env <env>`
 2. Perform force-unlock using the operational path for your environment.
 3. Immediately run a fresh plan:

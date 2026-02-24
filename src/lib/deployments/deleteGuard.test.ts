@@ -72,7 +72,7 @@ describe("project delete guard", () => {
     expect(result.allowed).toBe(false);
     expect(result.blocks.length).toBe(1);
     expect(result.blocks[0]?.environmentId).toBe("test");
-    expect(result.blocks[0]?.remediationCommand).toContain("tz deployments destroy --env test");
+    expect(result.blocks[0]?.remediation).toContain("Infra Environments");
   });
 
   test("allows delete after successful destroy after apply", () => {
@@ -140,7 +140,7 @@ describe("project delete guard", () => {
     expect(result.blocks[0]?.reason).toContain("active deployment lock");
   });
 
-  test("uses prod-specific remediation command", () => {
+  test("uses in-app remediation guidance", () => {
     const root = createProjectRoot();
     const projectPath = setupProject(root);
     saveProjectConfig(projectPath, {
@@ -164,6 +164,70 @@ describe("project delete guard", () => {
     const result = evaluateProjectDeleteGuard(projectPath);
     expect(result.allowed).toBe(false);
     expect(result.blocks[0]?.environmentId).toBe("prod");
-    expect(result.blocks[0]?.remediationCommand).toContain("--confirm-prod");
+    expect(result.blocks[0]?.remediation).toContain("Destroy environment");
+  });
+
+  test("allows delete when only failed status exists without apply success", () => {
+    const root = createProjectRoot();
+    const projectPath = setupProject(root);
+    saveProjectConfig(projectPath, {
+      name: "demo-project",
+      type: "other",
+      deploymentState: {
+        environments: {
+          prod: {
+            lastStatus: "failed",
+          },
+        },
+      },
+      deploymentRunHistory: [
+        {
+          id: "run_report_failed",
+          environmentId: "prod",
+          action: "report",
+          status: "failed",
+          startedAt: "2026-02-22T00:00:00.000Z",
+          finishedAt: "2026-02-22T00:00:10.000Z",
+          createdAt: "2026-02-22T00:00:10.000Z",
+          expiresAt: "2026-03-24T00:00:10.000Z",
+        },
+      ],
+    });
+
+    const result = evaluateProjectDeleteGuard(projectPath);
+    expect(result.allowed).toBe(true);
+    expect(result.blocks.length).toBe(0);
+  });
+
+  test("allows delete when only healthy status exists without apply success", () => {
+    const root = createProjectRoot();
+    const projectPath = setupProject(root);
+    saveProjectConfig(projectPath, {
+      name: "demo-project",
+      type: "other",
+      deploymentState: {
+        environments: {
+          prod: {
+            lastStatus: "healthy",
+          },
+        },
+      },
+      deploymentRunHistory: [
+        {
+          id: "run_report_ok",
+          environmentId: "prod",
+          action: "report",
+          status: "success",
+          startedAt: "2026-02-22T00:00:00.000Z",
+          finishedAt: "2026-02-22T00:00:10.000Z",
+          createdAt: "2026-02-22T00:00:10.000Z",
+          expiresAt: "2026-03-24T00:00:10.000Z",
+        },
+      ],
+    });
+
+    const result = evaluateProjectDeleteGuard(projectPath);
+    expect(result.allowed).toBe(true);
+    expect(result.blocks.length).toBe(0);
   });
 });

@@ -82,16 +82,13 @@ describe("aws deploy adapter", () => {
     expect(result.summary.destroy).toBe(3);
   });
 
-  test("maps report via plan exit codes and show path", async () => {
-    let callCount = 0;
+  test("maps report via plan exit codes", async () => {
     const runner = new OpenTofuDockerRunner({
-      shellExecutor: async () => {
-        callCount += 1;
-        if (callCount === 1) {
-          return { exitCode: 2, stdout: "Plan: 0 to add, 1 to change, 0 to destroy.", stderr: "" };
-        }
-        return { exitCode: 0, stdout: "show output", stderr: "" };
-      },
+      shellExecutor: async () => ({
+        exitCode: 2,
+        stdout: "Plan: 0 to add, 1 to change, 0 to destroy.",
+        stderr: "",
+      }),
     });
     const adapter = createAwsDeployAdapter(configWithBackend(), { runner });
     const result = await adapter.report({

@@ -33,6 +33,7 @@ import GenerationOutput, {
   type GenerationStep,
 } from "@/ui/components/GenerationOutput";
 import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { detectBlockedShellSyntax } from "@/lib/runSafety";
 import type { PipelineStep } from "@/lib/steps/types";
 import { getErrorMessage } from "@/lib/errors";
@@ -50,6 +51,17 @@ type ShellSyntaxWarning = {
   label: string;
   command: string;
   reason: string;
+};
+
+type FinalizeStatus = {
+  githubOrigin?: {
+    status: "configured" | "skipped" | "error";
+    message: string;
+  };
+  githubRepoVariables?: {
+    status: "configured" | "skipped" | "error";
+    message: string;
+  };
 };
 
 type Props = {
@@ -95,6 +107,7 @@ export default function ProjectBuilder({
     []
   );
   const [shellSyntaxWarningIndex, setShellSyntaxWarningIndex] = useState(0);
+  const [finalizeStatus, setFinalizeStatus] = useState<FinalizeStatus | null>(null);
 
   const getNodeKey = (node: BuilderQuestionNode): string =>
     node.kind === "step" ? `step:${node.step.id}` : `group:${node.id}`;
@@ -207,6 +220,18 @@ export default function ProjectBuilder({
     });
   }, [checkingDependencies]);
 
+  const readFinalizeStatus = (projectPath: string): FinalizeStatus | null => {
+    const statusPath = join(projectPath, ".tz", "finalize-status.json");
+    if (!existsSync(statusPath)) return null;
+    try {
+      const raw = readFileSync(statusPath, "utf-8");
+      const parsed = JSON.parse(raw) as FinalizeStatus;
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleStepAnswer = (value: string) => {
     if (!currentNode || currentNode.kind !== "step") return;
     const nodeKey = getNodeKey(currentNode);
@@ -274,7 +299,15 @@ export default function ProjectBuilder({
     );
     const allSteps = [
       ...applicableSteps,
-      { type: "finalize", config: { projectType: builderConfig.type } },
+      {
+        type: "finalize",
+        config: {
+          projectType: builderConfig.type,
+          bootstrapReleaseConfig: !!builderConfig.infra,
+          bootstrapReleaseWorkflow: !!builderConfig.infra,
+          awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
+        },
+      },
     ];
     const initialSteps: GenerationStep[] = allSteps.map((step) => ({
       label: getStepLabel(
@@ -289,6 +322,9 @@ export default function ProjectBuilder({
           pipeline: builderConfig.pipeline,
           configDir: builderConfig._configDir,
           projectType: builderConfig.type,
+          bootstrapReleaseConfig: !!builderConfig.infra,
+          bootstrapReleaseWorkflow: !!builderConfig.infra,
+          awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
           profile: { name: config.name, email: config.email ?? "" },
           allowShellSyntaxCommands,
           onProgress: (progress) => {
@@ -308,6 +344,7 @@ export default function ProjectBuilder({
         const updatedConfig = syncProjects(config);
         saveConfig(updatedConfig);
         onConfigUpdate?.(updatedConfig);
+        setFinalizeStatus(readFinalizeStatus(projectPath));
         setPhase("done");
         onProjectSelect?.(projectPath);
       } catch (err) {
@@ -350,7 +387,15 @@ export default function ProjectBuilder({
     const applicableSteps = getApplicablePipelineSteps(builderConfig.pipeline, answers);
     const allSteps = [
       ...applicableSteps,
-      { type: "finalize", config: { projectType: builderConfig.type } },
+      {
+        type: "finalize",
+        config: {
+          projectType: builderConfig.type,
+          bootstrapReleaseConfig: !!builderConfig.infra,
+          bootstrapReleaseWorkflow: !!builderConfig.infra,
+          awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
+        },
+      },
     ];
     const initialSteps: GenerationStep[] = allSteps.map((step) => ({
       label: getStepLabel(
@@ -370,6 +415,9 @@ export default function ProjectBuilder({
           pipeline: builderConfig.pipeline,
           configDir: builderConfig._configDir,
           projectType: builderConfig.type,
+          bootstrapReleaseConfig: !!builderConfig.infra,
+          bootstrapReleaseWorkflow: !!builderConfig.infra,
+          awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
           profile: { name: config.name, email: config.email ?? "" },
           allowShellSyntaxCommands: true,
           onProgress: (progress) => {
@@ -389,6 +437,7 @@ export default function ProjectBuilder({
         const updatedConfig = syncProjects(config);
         saveConfig(updatedConfig);
         onConfigUpdate?.(updatedConfig);
+        setFinalizeStatus(readFinalizeStatus(projectPath));
         setPhase("done");
         onProjectSelect?.(projectPath);
       } catch (err) {
@@ -503,6 +552,44 @@ export default function ProjectBuilder({
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="green">Project created successfully!</Text>
+        {builderConfig.infra && (
+          <Box flexDirection="column">
+            <Text dimColor>
+              Initialized release config at .tz/release.yaml (version 0.1.0, release prefix v).
+            </Text>
+            <Text dimColor>
+              Scaffolded GitHub workflow at .github/workflows/release.yml.
+            </Text>
+            {finalizeStatus?.githubOrigin && (
+              <Text
+                color={
+                  finalizeStatus.githubOrigin.status === "configured"
+                    ? "green"
+                    : finalizeStatus.githubOrigin.status === "error"
+                      ? "red"
+                      : undefined
+                }
+                dimColor={finalizeStatus.githubOrigin.status === "skipped"}
+              >
+                GitHub origin: {finalizeStatus.githubOrigin.message}
+              </Text>
+            )}
+            {finalizeStatus?.githubRepoVariables && (
+              <Text
+                color={
+                  finalizeStatus.githubRepoVariables.status === "configured"
+                    ? "green"
+                    : finalizeStatus.githubRepoVariables.status === "error"
+                      ? "red"
+                      : undefined
+                }
+                dimColor={finalizeStatus.githubRepoVariables.status === "skipped"}
+              >
+                GitHub repo variables: {finalizeStatus.githubRepoVariables.message}
+              </Text>
+            )}
+          </Box>
+        )}
         <Text dimColor>Press Esc to go back.</Text>
       </Box>
     );

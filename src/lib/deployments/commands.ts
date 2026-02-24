@@ -1,6 +1,11 @@
 import { cwd } from "node:process";
-import { loadConfig, type TzConfig } from "@/lib/config";
+import { loadConfig, loadProjectReleaseConfigWithError, type TzConfig } from "@/lib/config";
 import { createAwsDeployAdapter } from "@/lib/deployments/awsAdapter";
+import {
+  materializeInfraForEnvironment,
+  type MaterializeInfraResult,
+} from "@/lib/deployments/materialize";
+import { runDeploymentsGitPreflight } from "@/lib/deployments/gitPreflight";
 import {
   assertDeploymentsModeEnabled,
   evaluateDeploymentsEnablementGate,
@@ -8,6 +13,7 @@ import {
 import {
   runApply,
   runDestroy,
+  type PlannedResourceChange,
   runPlan,
   runReport,
   runReportRefreshLoop,
@@ -23,6 +29,8 @@ type CommandMap = Record<string, string | boolean>;
 
 type DeploymentsCommandDeps = {
   loadUserConfig: () => TzConfig | null;
+  loadReleaseConfig: typeof loadProjectReleaseConfigWithError;
+  runGitPreflight: typeof runDeploymentsGitPreflight;
   createAdapter: (config: TzConfig) => DeployAdapter;
   evaluateGate: typeof evaluateDeploymentsEnablementGate;
   assertMode: typeof assertDeploymentsModeEnabled;
@@ -31,12 +39,19 @@ type DeploymentsCommandDeps = {
   runDestroy: typeof runDestroy;
   runReport: typeof runReport;
   runReportRefreshLoop: typeof runReportRefreshLoop;
+  materializeInfra: (
+    projectPath: string,
+    environmentId: string,
+    config: TzConfig
+  ) => MaterializeInfraResult;
   getCwd: () => string;
   writeLine: (text: string) => void;
 };
 
 const defaultDeps: DeploymentsCommandDeps = {
   loadUserConfig: loadConfig,
+  loadReleaseConfig: loadProjectReleaseConfigWithError,
+  runGitPreflight: runDeploymentsGitPreflight,
   createAdapter: createAwsDeployAdapter,
   evaluateGate: evaluateDeploymentsEnablementGate,
   assertMode: assertDeploymentsModeEnabled,
@@ -45,6 +60,10 @@ const defaultDeps: DeploymentsCommandDeps = {
   runDestroy,
   runReport,
   runReportRefreshLoop,
+  materializeInfra: (projectPath: string, environmentId: string, config: TzConfig) =>
+    materializeInfraForEnvironment(projectPath, environmentId, {
+      backendRegion: config.integrations?.aws?.backend?.region,
+    }),
   getCwd: () => cwd(),
   writeLine: (text: string) => console.log(text),
 };
@@ -88,6 +107,15 @@ function writePlanSummary(writeLine: (text: string) => void, result: PlanResult)
     `Plan summary: add=${result.summary.add ?? 0}, change=${result.summary.change ?? 0}, destroy=${result.summary.destroy ?? 0}`
   );
   writeLine(`Drift detected: ${result.driftDetected ? "yes" : "no"}`);
+  const plannedChanges = result.plannedChanges ?? [];
+  if (plannedChanges.length === 0) {
+    writeLine("Planned resource changes: none");
+    return;
+  }
+  writeLine("Planned resource changes:");
+  for (const change of plannedChanges) {
+    writeLine(`- [${change.actions.join(",")}] ${change.address}`);
+  }
 }
 
 function writeApplySummary(writeLine: (text: string) => void, result: ApplyResult): void {
@@ -135,7 +163,7 @@ function writeReportRemediation(
 export async function maybeRunDeploymentsCommand(
   argv: string[],
   overrides?: Partial<DeploymentsCommandDeps>
-): Promise<{ handled: boolean; exitCode: number }> {
+): Promise<{ handled: boolean; exitCode: number; planChanges?: PlannedResourceChange[] }> {
   if (argv[0] !== "deployments") {
     return { handled: false, exitCode: 0 };
   }
@@ -178,23 +206,43 @@ export async function maybeRunDeploymentsCommand(
     return { handled: true, exitCode: 1 };
   }
   const projectPath = asStringArg(flags, "project") ?? deps.getCwd();
+  const releaseConfigResult = deps.loadReleaseConfig(projectPath);
+  if (releaseConfigResult.error) {
+    deps.writeLine(releaseConfigResult.error);
+    return { handled: true, exitCode: 1 };
+  }
+  if (!releaseConfigResult.config) {
+    deps.writeLine(
+      "Deployment blocked: release config not found. Create .tz/release.yaml with version and tagPrefix first."
+    );
+    return { handled: true, exitCode: 1 };
+  }
   const adapter = deps.createAdapter(config);
 
   try {
+    await deps.runGitPreflight({
+      projectPath,
+      releaseConfig: releaseConfigResult.config,
+    });
+    deps.materializeInfra(projectPath, environmentId, config);
+
     if (action === "plan") {
+      deps.writeLine(`Starting plan for '${environmentId}'...`);
       const result = await deps.runPlan(config, projectPath, environmentId, adapter);
       writePlanSummary(deps.writeLine, result);
       if (hasErrors(result)) {
         writeErrors(deps.writeLine, result.errors ?? []);
         return { handled: true, exitCode: 1 };
       }
+      deps.writeLine(`Plan completed for '${environmentId}'.`);
       if (result.driftDetected) {
         deps.writeLine(`Next step: tz deployments apply --env ${environmentId}`);
       }
-      return { handled: true, exitCode: 0 };
+      return { handled: true, exitCode: 0, planChanges: result.plannedChanges };
     }
 
     if (action === "apply") {
+      deps.writeLine(`Starting pre-apply drift check for '${environmentId}'...`);
       const preflight = await deps.runReport(config, projectPath, environmentId, adapter);
       if (hasErrors(preflight)) {
         writeReportSummary(deps.writeLine, preflight);
@@ -214,6 +262,8 @@ export async function maybeRunDeploymentsCommand(
         );
         return { handled: true, exitCode: 1 };
       }
+      deps.writeLine(`Pre-apply drift check passed for '${environmentId}'.`);
+      deps.writeLine(`Starting apply for '${environmentId}'...`);
       const result = await deps.runApply(config, projectPath, environmentId, adapter, {
         confirmDriftForProd: flags["confirm-drift-prod"] === true,
       });
@@ -222,6 +272,7 @@ export async function maybeRunDeploymentsCommand(
         writeErrors(deps.writeLine, result.errors ?? []);
         return { handled: true, exitCode: 1 };
       }
+      deps.writeLine(`Apply completed for '${environmentId}'.`);
       return { handled: true, exitCode: 0 };
     }
 

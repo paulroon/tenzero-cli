@@ -30,6 +30,9 @@ export async function generateProject(
     pipeline: PipelineStep[];
     configDir?: string;
     projectType: ProjectType;
+    bootstrapReleaseConfig?: boolean;
+    bootstrapReleaseWorkflow?: boolean;
+    awsRegionForReleaseWorkflow?: string;
     profile: Profile;
     allowShellSyntaxCommands?: boolean;
     onProgress?: GenerationProgressCallback;
@@ -66,8 +69,21 @@ export async function generateProject(
       },
     })),
     {
-      step: { type: "finalize", config: { projectType: options.projectType } },
-      config: { projectType: options.projectType },
+      step: {
+        type: "finalize",
+        config: {
+          projectType: options.projectType,
+          bootstrapReleaseConfig: options.bootstrapReleaseConfig === true,
+          bootstrapReleaseWorkflow: options.bootstrapReleaseWorkflow === true,
+          awsRegionForReleaseWorkflow: options.awsRegionForReleaseWorkflow,
+        },
+      },
+      config: {
+        projectType: options.projectType,
+        bootstrapReleaseConfig: options.bootstrapReleaseConfig === true,
+        bootstrapReleaseWorkflow: options.bootstrapReleaseWorkflow === true,
+        awsRegionForReleaseWorkflow: options.awsRegionForReleaseWorkflow,
+      },
     },
   ];
   const total = allSteps.length;

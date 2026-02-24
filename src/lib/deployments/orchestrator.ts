@@ -24,10 +24,18 @@ export type AdapterWarning = {
   message: string;
 };
 
+export type PlannedResourceChange = {
+  address: string;
+  actions: string[];
+  providerName?: string;
+  resourceType?: string;
+};
+
 export type PlanResult = {
   status: EnvironmentStatus;
   summary: DeploymentRunSummary;
   driftDetected: boolean;
+  plannedChanges?: PlannedResourceChange[];
   warnings?: AdapterWarning[];
   errors?: AdapterError[];
   logs?: string[];

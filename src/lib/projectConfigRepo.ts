@@ -303,10 +303,31 @@ export async function listRemoteProjectConfigs(): Promise<string[]> {
       repoRef.ref
     )}`
   );
-  return root
-    .filter(
-      (entry) => entry.type === "dir" && !isIgnoredProjectConfigId(entry.name)
-    )
+  const candidateDirs = root.filter(
+    (entry) =>
+      entry.type === "dir" &&
+      !isIgnoredProjectConfigId(entry.name) &&
+      entry.name !== "docs"
+  );
+
+  const hasConfigFile = await Promise.all(
+    candidateDirs.map(async (entry) => {
+      try {
+        const children = await listRepoPath(entry.path, repoRef.ref);
+        const containsConfig = children.some(
+          (child) =>
+            child.type === "file" &&
+            PROJECT_BUILDER_CONFIG_FILENAMES.includes(child.name)
+        );
+        return { name: entry.name, containsConfig };
+      } catch {
+        return { name: entry.name, containsConfig: false };
+      }
+    })
+  );
+
+  return hasConfigFile
+    .filter((entry) => entry.containsConfig)
     .map((entry) => entry.name)
     .sort((a, b) => a.localeCompare(b));
 }

@@ -44,3 +44,4 @@ For each `tz-cli` release that changes infra behavior:
    - `tz deployments plan|apply|destroy|report`
    - `report --watch` flags
    - drift confirmation flags and prod destroy confirmation phrases
+   - interactive app flow (`Dashboard -> Infra Environments`) and remediation wording

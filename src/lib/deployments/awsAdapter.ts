@@ -1,8 +1,11 @@
 import type { TzConfig } from "@/lib/config";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { ShellError } from "@/lib/shell";
 import {
   OpenTofuDockerRunner,
   type AwsBackendSettings,
+  type OpenTofuPlanResourceChange,
 } from "@/lib/deployments/openTofuRunner";
 import type {
   AdapterError,
@@ -10,6 +13,7 @@ import type {
   DeployAdapter,
   DestroyResult,
   PlanResult,
+  PlannedResourceChange,
   ReportResult,
 } from "@/lib/deployments/orchestrator";
 
@@ -74,24 +78,45 @@ function normalizeAdapterError(error: unknown): AdapterError {
   };
 }
 
+function toPlannedChanges(
+  changes: OpenTofuPlanResourceChange[] | undefined
+): PlannedResourceChange[] | undefined {
+  if (!changes || changes.length === 0) return undefined;
+  return changes.map((entry) => ({
+    address: entry.address,
+    actions: entry.actions,
+    providerName: entry.providerName,
+    resourceType: entry.resourceType,
+  }));
+}
+
 export function createAwsDeployAdapter(
   config: TzConfig,
   options?: { runner?: OpenTofuDockerRunner }
 ): DeployAdapter {
   const backend = requireAwsBackend(config);
   const runner = options?.runner ?? new OpenTofuDockerRunner();
+  const resolveWorkspacePath = (projectPath: string, environmentId: string): string => {
+    const materializedPath = join(projectPath, ".tz", "infra", environmentId);
+    return existsSync(materializedPath) ? materializedPath : projectPath;
+  };
 
   return {
     async plan({ projectPath, environmentId }): Promise<PlanResult> {
       try {
-        const result = await runner.run("plan", { projectPath, environmentId, backend });
-        const summary = parsePlanSummary(result.stdout);
+        const detailed = await runner.runPlanWithJson({
+          projectPath: resolveWorkspacePath(projectPath, environmentId),
+          environmentId,
+          backend,
+        });
+        const summary = parsePlanSummary(detailed.run.stdout);
         const driftDetected = summary.add + summary.change + summary.destroy > 0;
         return {
           status: driftDetected ? "drifted" : "healthy",
           summary,
           driftDetected,
-          logs: result.logs,
+          plannedChanges: toPlannedChanges(detailed.plannedChanges),
+          logs: detailed.run.logs,
         };
       } catch (error) {
         return {
@@ -106,7 +131,11 @@ export function createAwsDeployAdapter(
 
     async apply({ projectPath, environmentId }): Promise<ApplyResult> {
       try {
-        const result = await runner.run("apply", { projectPath, environmentId, backend });
+        const result = await runner.run("apply", {
+          projectPath: resolveWorkspacePath(projectPath, environmentId),
+          environmentId,
+          backend,
+        });
         return {
           status: "healthy",
           summary: parseApplySummary(result.stdout),
@@ -124,7 +153,11 @@ export function createAwsDeployAdapter(
 
     async destroy({ projectPath, environmentId }): Promise<DestroyResult> {
       try {
-        const result = await runner.run("destroy", { projectPath, environmentId, backend });
+        const result = await runner.run("destroy", {
+          projectPath: resolveWorkspacePath(projectPath, environmentId),
+          environmentId,
+          backend,
+        });
         return {
           status: "healthy",
           summary: parseDestroySummary(result.stdout),
@@ -142,24 +175,24 @@ export function createAwsDeployAdapter(
 
     async report({ projectPath, environmentId }): Promise<ReportResult> {
       try {
+        const workspacePath = resolveWorkspacePath(projectPath, environmentId);
         const planResult = await runner.run(
           "plan",
-          { projectPath, environmentId, backend },
+          { projectPath: workspacePath, environmentId, backend },
           { allowNonZero: true }
         );
-        const showResult = await runner.run("show", { projectPath, environmentId, backend });
         if (planResult.exitCode === 0) {
           return {
             status: "healthy",
             driftDetected: false,
-            logs: [...planResult.logs, ...showResult.logs],
+            logs: [...planResult.logs],
           };
         }
         if (planResult.exitCode === 2) {
           return {
             status: "drifted",
             driftDetected: true,
-            logs: [...planResult.logs, ...showResult.logs],
+            logs: [...planResult.logs],
           };
         }
         return {
@@ -171,7 +204,7 @@ export function createAwsDeployAdapter(
               message: planResult.stderr || "Unable to determine report status",
             },
           ],
-          logs: [...planResult.logs, ...showResult.logs],
+          logs: [...planResult.logs],
         };
       } catch (error) {
         return {

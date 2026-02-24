@@ -27,7 +27,8 @@ describe("open tofu docker runner", () => {
     expect(joined.includes("TZ_AWS_BACKEND_STATE_KEY=tz/user-123/app-demo/uat/tofu.tfstate")).toBe(
       true
     );
-    expect(joined.includes("plan -no-color -var=tz_environment_id=uat")).toBe(true);
+    expect(joined.includes("plan -input=false -no-color -var=tz_environment_id=uat")).toBe(true);
+    expect(joined.includes("TF_IN_AUTOMATION=1")).toBe(true);
   });
 
   test("invokes docker via injected shell executor", async () => {

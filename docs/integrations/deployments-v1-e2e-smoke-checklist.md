@@ -12,6 +12,8 @@ Use this checklist before tagging a Deployments v1 release.
 
 ## Core command smoke
 
+For interactive coverage, run the same lifecycle from App Dashboard -> Infra Environments.
+
 - [ ] `tz deployments plan --env test` succeeds and prints plan summary.
 - [ ] `tz deployments report --env test` succeeds and prints status/drift.
 - [ ] `tz deployments apply --env test` succeeds from clean/fresh plan path.
@@ -29,7 +31,7 @@ Use this checklist before tagging a Deployments v1 release.
 ## Lifecycle safety smoke
 
 - [ ] Local app delete is blocked when provider-backed environments remain.
-- [ ] Delete error lists exact environment IDs and suggested destroy commands.
+- [ ] Delete error lists exact environment IDs and in-app destroy guidance.
 - [ ] Local app delete succeeds after all environments are destroyed.
 
 ## Audit and retention smoke

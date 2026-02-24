@@ -64,6 +64,17 @@ export type DeploymentState = {
   environments: Record<string, DeploymentEnvironmentState>;
 };
 
+export type ProjectEnvironmentReleaseSelection = {
+  selectedImageRef?: string;
+  selectedImageDigest?: string;
+  selectedReleaseTag?: string;
+  selectedAt?: string;
+};
+
+export type ProjectReleaseState = {
+  environments: Record<string, ProjectEnvironmentReleaseSelection>;
+};
+
 export type ProjectOutputType = "string" | "number" | "boolean" | "json" | "secret_ref";
 export type ProjectOutputSource = "manualOverride" | "providerOutput" | "templateDefault";
 
@@ -107,6 +118,7 @@ export type TzProjectConfig = {
   environmentOutputs?: ProjectEnvironmentOutputs;
   deploymentRunHistory?: ProjectDeploymentRunRecord[];
   deploymentState?: DeploymentState;
+  releaseState?: ProjectReleaseState;
 };
 
 const OUTPUT_SOURCE_PRIORITY: Record<ProjectOutputSource, number> = {
@@ -291,6 +303,31 @@ function normalizeDeploymentState(raw: unknown): DeploymentState | undefined {
   return { environments };
 }
 
+function normalizeReleaseState(raw: unknown): ProjectReleaseState | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const environmentsRaw = (raw as { environments?: unknown }).environments;
+  if (!environmentsRaw || typeof environmentsRaw !== "object" || Array.isArray(environmentsRaw)) {
+    return undefined;
+  }
+  const environments: Record<string, ProjectEnvironmentReleaseSelection> = {};
+  for (const [environmentId, value] of Object.entries(
+    environmentsRaw as Record<string, unknown>
+  )) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const candidate = value as Partial<ProjectEnvironmentReleaseSelection>;
+    environments[environmentId] = {
+      selectedImageRef:
+        typeof candidate.selectedImageRef === "string" ? candidate.selectedImageRef : undefined,
+      selectedImageDigest:
+        typeof candidate.selectedImageDigest === "string" ? candidate.selectedImageDigest : undefined,
+      selectedReleaseTag:
+        typeof candidate.selectedReleaseTag === "string" ? candidate.selectedReleaseTag : undefined,
+      selectedAt: typeof candidate.selectedAt === "string" ? candidate.selectedAt : undefined,
+    };
+  }
+  return { environments };
+}
+
 export function loadProjectConfig(path: string): TzProjectConfig | null {
   const config = parseJsonFile<Partial<TzProjectConfig>>(
     getProjectConfigPath(path)
@@ -321,6 +358,7 @@ export function loadProjectConfig(path: string): TzProjectConfig | null {
   const environmentOutputs = normalizeEnvironmentOutputs(config.environmentOutputs);
   const deploymentRunHistory = normalizeDeploymentRunHistory(config.deploymentRunHistory);
   const deploymentState = normalizeDeploymentState(config.deploymentState);
+  const releaseState = normalizeReleaseState(config.releaseState);
 
   return {
     name: config.name ?? "unknown",
@@ -331,6 +369,7 @@ export function loadProjectConfig(path: string): TzProjectConfig | null {
     environmentOutputs,
     deploymentRunHistory,
     deploymentState,
+    releaseState,
   };
 }
 

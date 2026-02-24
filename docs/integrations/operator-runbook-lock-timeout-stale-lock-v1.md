@@ -8,6 +8,8 @@ This runbook covers lock-related deployment failures in `tz-cli` Deployments v1:
 - stale lock threshold: **30 minutes**
 - fail-closed behavior for uncertain lock state
 
+Interactive path: App Dashboard -> Infra Environments -> select environment.
+
 ## Symptoms
 
 You may see errors like:
@@ -24,7 +26,7 @@ You may see errors like:
 ## First response checklist
 
 1. Verify no active deploy command is still running for the same environment.
-2. Run a non-destructive status check:
+2. Run a non-destructive status check (or use the Dashboard Report action):
    - `tz deployments report --env <env>`
 3. If lock timeout repeats and no active run exists, treat lock as potentially stale.
 

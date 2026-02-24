@@ -1,5 +1,6 @@
 export * from "./user";
 export * from "./project";
+export * from "./release";
 export {
   listProjectConfigs,
   loadProjectBuilderConfig,

@@ -6,25 +6,25 @@ import LayoutFooter from "@/ui/components/LayoutFooter";
 import BorderBox from "./BorderBox";
 
 type Props = {
-  headerTitle: string;
-  status: string;
-  children: ReactNode;
-  footerLeft: string;
+    headerTitle: string;
+    status: string;
+    children: ReactNode;
+    footerLeft: string;
 };
 
 export default function AppLayout({
-  headerTitle,
-  status,
-  children,
-  footerLeft,
+    headerTitle,
+    status,
+    children,
+    footerLeft,
 }: Props) {
-  return (
-    <Box flexDirection="column" flexGrow={1}>
-      <LayoutHeader headerTitle={headerTitle} status={status} />
-      <LayoutMain>
-        <BorderBox>{children}</BorderBox>
-      </LayoutMain>
-      <LayoutFooter footerLeft={footerLeft} />
-    </Box>
-  );
+    return (
+        <Box flexDirection="column" flexGrow={1}>
+            <LayoutHeader headerTitle={headerTitle} status={status} />
+            <LayoutMain>
+                <BorderBox>{children}</BorderBox>
+            </LayoutMain>
+            <LayoutFooter footerLeft={footerLeft} />
+        </Box>
+    );
 }

@@ -5,7 +5,7 @@ type Timestamp = string;
 export type ProjectDeleteGuardBlock = {
   environmentId: string;
   reason: string;
-  remediationCommand: string;
+  remediation: string;
 };
 
 export type ProjectDeleteGuardResult = {
@@ -61,7 +61,7 @@ export function evaluateProjectDeleteGuard(projectPath: string): ProjectDeleteGu
       blocks.push({
         environmentId,
         reason: "active deployment lock present",
-        remediationCommand: `tz deployments destroy --env ${environmentId} --confirm-env ${environmentId} --confirm "destroy ${environmentId}"`,
+        remediation: `Open Infra Environments > '${environmentId}' and run Destroy environment.`,
       });
       continue;
     }
@@ -74,22 +74,14 @@ export function evaluateProjectDeleteGuard(projectPath: string): ProjectDeleteGu
 
     if (
       !hasSuccessfulDestroyAfterApply &&
-      (status === "healthy" ||
-        status === "drifted" ||
-        status === "deploying" ||
-        status === "failed" ||
-        !!latestApply ||
-        hasProviderOutput(projectPath, environmentId))
+      (status === "deploying" || !!latestApply || hasProviderOutput(projectPath, environmentId))
     ) {
       blocks.push({
         environmentId,
         reason: `provider-backed environment is not destroyed${
           status ? ` (status: ${status})` : ""
         }`,
-        remediationCommand:
-          environmentId === "prod"
-            ? `tz deployments destroy --env prod --confirm-env prod --confirm "destroy prod" --confirm-prod "destroy prod permanently"`
-            : `tz deployments destroy --env ${environmentId} --confirm-env ${environmentId} --confirm "destroy ${environmentId}"`,
+        remediation: `Open Infra Environments > '${environmentId}' and run Destroy environment.`,
       });
     }
   }
