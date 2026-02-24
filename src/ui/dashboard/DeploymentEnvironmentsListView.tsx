@@ -5,19 +5,19 @@ import { Select } from "@inkjs/ui";
 const RED = "\x1b[31m";
 const RESET = "\x1b[0m";
 
-type InfraEnv = {
+type DeployEnv = {
   id: string;
   label: string;
 };
 
 type Props = {
-  environments: InfraEnv[];
+  environments: DeployEnv[];
   getEnvironmentStatus: (environmentId: string) => string;
   onDeleteApp: () => void;
   onSelectEnvironment: (environmentId: string) => void;
 };
 
-export function InfraEnvironmentsListView({
+export function DeploymentEnvironmentsListView({
   environments,
   getEnvironmentStatus,
   onDeleteApp,
@@ -31,10 +31,10 @@ export function InfraEnvironmentsListView({
   return (
     <Box flexDirection="column" gap={1}>
       <Text color="yellow" bold>
-        Infra Environments
+        Deployment Environments
       </Text>
       {environments.length === 0 && (
-        <Text dimColor>No infra environments defined for this template.</Text>
+        <Text dimColor>No deployment environments defined for this template.</Text>
       )}
       <Select
         options={[...environmentOptions, { label: `${RED}Delete app${RESET}`, value: "delete" }]}

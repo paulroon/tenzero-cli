@@ -1,10 +1,10 @@
-# Testing Strategy v1 (Deployments & Infra)
+# Testing Strategy v1 (Deployments)
 
 ## Purpose
 
-Define the v1 test strategy for deployment infrastructure features with emphasis on:
+Define the v1 test strategy for deployment features with emphasis on:
 
-1. Infra schema validation
+1. Deploy template schema validation
 2. Lock/timeout/stale-lock behavior
 3. Redaction and 30-day retention
 4. Deployments-mode enablement gate
@@ -22,17 +22,17 @@ This strategy aligns with ADR-001/002/003 and decisions `D-003`, `D-004`, `D-008
 
 ## Tooling expectations
 
-- Use deterministic fixtures for template `infra` configs.
+- Use deterministic fixtures for template `deploy.yaml` configs.
 - Use fake clock/time travel utilities for retention expiry tests.
 - Use backend/provider stubs for lock timeout/stale lock and permission errors.
 - Ensure test logs are captured and assert redaction behavior.
 
-## 1) Validation tests for infra schema
+## 1) Validation tests for deploy template schema
 
 ## Unit tests
 
-- Accept valid `infra.version: "1"` with valid environments.
-- Reject missing/invalid `infra.version`.
+- Accept valid `deploy.yaml.version: "2"` with valid environments.
+- Reject missing/invalid `deploy.yaml.version`.
 - Reject duplicate environment `id`.
 - Reject environment `id` violating `^[a-z][a-z0-9-]{1,31}$`.
 - Reject unknown capabilities outside v1 allowlist.
@@ -42,7 +42,7 @@ This strategy aligns with ADR-001/002/003 and decisions `D-003`, `D-004`, `D-008
 
 ## Integration tests
 
-- Parse real template config with `infra` and ensure normalized internal model is produced.
+- Parse real template config with `deploy.yaml` and ensure normalized internal model is produced.
 - Verify immutability rule:
   - allow env `id` change before first successful deploy
   - reject env `id` change after first successful deploy
@@ -119,7 +119,7 @@ This strategy aligns with ADR-001/002/003 and decisions `D-003`, `D-004`, `D-008
 
 ## Recommended CI grouping
 
-- `test:infra-schema`
+- `test:deploy-template-schema`
 - `test:deploy-locking`
 - `test:run-history`
 - `test:deploy-gate`

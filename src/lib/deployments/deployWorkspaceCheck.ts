@@ -1,13 +1,13 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-export type InfraConfigReadiness = {
+export type DeployWorkspaceReadiness = {
   ready: boolean;
   tfFiles: string[];
   searchedPaths: string[];
 };
 
-const DEFAULT_SEARCH_DIRS = [".", ".tz/infra", ".tz/deployments"] as const;
+const DEFAULT_SEARCH_DIRS = [".", ".tz/deploy"] as const;
 
 function collectTfFilesInDir(dirPath: string, maxDepth: number): string[] {
   if (!existsSync(dirPath)) return [];
@@ -37,7 +37,7 @@ function collectTfFilesInDir(dirPath: string, maxDepth: number): string[] {
   return results;
 }
 
-export function evaluateInfraConfigReadiness(projectPath: string): InfraConfigReadiness {
+export function evaluateDeployWorkspaceReadiness(projectPath: string): DeployWorkspaceReadiness {
   const searchedPaths = DEFAULT_SEARCH_DIRS.map((relative) => join(projectPath, relative));
   const tfFiles = searchedPaths.flatMap((path) => collectTfFilesInDir(path, 4));
   return {

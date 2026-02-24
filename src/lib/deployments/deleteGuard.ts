@@ -61,7 +61,7 @@ export function evaluateProjectDeleteGuard(projectPath: string): ProjectDeleteGu
       blocks.push({
         environmentId,
         reason: "active deployment lock present",
-        remediation: `Open Infra Environments > '${environmentId}' and run Destroy environment.`,
+        remediation: `Open Deployment Environments > '${environmentId}' and run Destroy environment.`,
       });
       continue;
     }
@@ -81,7 +81,7 @@ export function evaluateProjectDeleteGuard(projectPath: string): ProjectDeleteGu
         reason: `provider-backed environment is not destroyed${
           status ? ` (status: ${status})` : ""
         }`,
-        remediation: `Open Infra Environments > '${environmentId}' and run Destroy environment.`,
+        remediation: `Open Deployment Environments > '${environmentId}' and run Destroy environment.`,
       });
     }
   }

@@ -1,11 +1,11 @@
-# UI Spec v1: Integrations and App Infra Environments
+# UI Spec v1: Integrations and App Deployment Environments
 
 ## Purpose
 
 Define v1 UI behavior for:
 
 - User-level Integrations setup
-- App-level Infra Environments operations
+- App-level Deployment Environments operations
 
 ## 1) User Settings > Integrations
 
@@ -36,7 +36,7 @@ Sections:
   - allow enablement
   - record enabled timestamp/profile context
 
-## 2) App Dashboard > Infra Environments
+## 2) App Dashboard > Deployment Environments
 
 ## Environment list
 

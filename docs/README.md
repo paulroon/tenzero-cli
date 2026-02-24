@@ -13,26 +13,26 @@
 - `integrations/deployment-workflow-v1.md`
 - `integrations/iam-state-backend-policy-v1.md`
 - `integrations/testing-strategy-v1.md`
-- `integrations/ui-spec-integrations-and-infra-v1.md`
+- `integrations/ui-spec-integrations-and-deployments-v1.md`
 - `integrations/operator-runbook-lock-timeout-stale-lock-v1.md`
 - `integrations/operator-runbook-force-unlock-replan-v1.md`
 - `integrations/operator-runbook-prod-plan-apply-safety-v1.md`
 - `integrations/deployments-v1-e2e-smoke-checklist.md`
 
-## Infra Compatibility Matrix
+## Deploy Schema Compatibility Matrix
 
-This matrix tracks which `infra.version` schema majors are supported by `tz-cli` releases.
+This matrix tracks which `deploy.yaml.version` schema majors are supported by `tz-cli` releases.
 
-| tz-cli release line | Supported `infra.version` majors | Notes |
+| tz-cli release line | Supported `deploy.yaml.version` majors | Notes |
 | --- | --- | --- |
-| current (main) | `1` | Deployments v1 shipped through PR-11 behavior set |
+| current (main) | `2` | Deploy template contract is the source of truth |
 
 ## Release/docs workflow
 
-For each `tz-cli` release that changes infra behavior:
+For each `tz-cli` release that changes deployment schema behavior:
 
 1. Update the compatibility matrix in this file.
-2. Update `tz-project-config/docs/integrations/infra-versioning-policy.md` if policy/compatibility changed.
+2. Update `tz-project-config/docs/integrations/deploy-template-versioning-policy.md` if policy/compatibility changed.
 3. Update relevant ADR/spec docs when schema or compatibility semantics change.
 4. Verify runbooks reflect current guardrails:
    - lock timeout/stale lock
@@ -44,4 +44,4 @@ For each `tz-cli` release that changes infra behavior:
    - `tz deployments plan|apply|destroy|report`
    - `report --watch` flags
    - drift confirmation flags and prod destroy confirmation phrases
-   - interactive app flow (`Dashboard -> Infra Environments`) and remediation wording
+   - interactive app flow (`Dashboard -> Deployment Environments`) and remediation wording

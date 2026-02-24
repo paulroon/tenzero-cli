@@ -1,17 +1,17 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { loadProjectBuilderConfig } from "@/lib/config/projectBuilder";
-import { loadProjectConfig } from "@/lib/config/project";
+import { listProjectConfigs, loadDeployTemplateConfigWithError } from "@/lib/config";
+import { loadProjectConfig, saveProjectConfig } from "@/lib/config/project";
 import { planEnvironmentDeployment } from "@/lib/deployments/capabilityPlanner";
 
 type SupportedOutputType = "string" | "number" | "boolean" | "json" | "secret_ref";
 
-export type MaterializeInfraResult = {
+export type PrepareDeployWorkspaceResult = {
   directoryPath: string;
   filePaths: string[];
 };
 
-export type MaterializeInfraOptions = {
+export type PrepareDeployWorkspaceOptions = {
   backendRegion?: string;
 };
 
@@ -42,29 +42,41 @@ function slugify(input: string): string {
   return normalized.length > 0 ? normalized : "app";
 }
 
-export function materializeInfraForEnvironment(
+export function prepareDeployWorkspaceForEnvironment(
   projectPath: string,
   environmentId: string,
-  options?: MaterializeInfraOptions
-): MaterializeInfraResult {
+  options?: PrepareDeployWorkspaceOptions
+): PrepareDeployWorkspaceResult {
   const project = loadProjectConfig(projectPath);
   if (!project) {
     throw new Error(`Project config not found: ${projectPath}`);
   }
-  const template = loadProjectBuilderConfig(project.type);
-  if (!template?.infra) {
+  const templateMeta = listProjectConfigs().find((entry) => entry.id === project.type);
+  if (!templateMeta) {
     throw new Error(
-      `Template '${project.type}' has no infra definition. Add infra config before deployment.`
+      `Template '${project.type}' config not found.`
     );
   }
-  const environment = template.infra.environments.find((entry) => entry.id === environmentId);
+  const deployConfigResult = loadDeployTemplateConfigWithError(templateMeta.path);
+  if (!deployConfigResult.exists) {
+    throw new Error(
+      `Template '${project.type}' has no deploy.yaml definition. Add deploy config before deployment.`
+    );
+  }
+  if (!deployConfigResult.config) {
+    throw new Error(
+      `Template '${project.type}' deploy config is invalid. ${deployConfigResult.error ?? "Fix deploy.yaml and retry."}`
+    );
+  }
+  const deployConfig = deployConfigResult.config;
+  const environment = deployConfig.environments.find((entry) => entry.id === environmentId);
   if (!environment) {
     throw new Error(
-      `Environment '${environmentId}' is not defined in template infra for '${project.type}'.`
+      `Environment '${environmentId}' is not defined in deploy.yaml for '${project.type}'.`
     );
   }
 
-  const plan = planEnvironmentDeployment(template.infra, environmentId);
+  const plan = planEnvironmentDeployment(deployConfig.environments, environmentId);
   const backendRegion = options?.backendRegion?.trim();
   const effectiveConstraints: Record<string, unknown> = {
     ...environment.constraints,
@@ -85,26 +97,63 @@ export function materializeInfraForEnvironment(
   if (backendRegion) {
     effectiveConstraints.region = backendRegion;
   }
-  const materializedModules = plan.modules.map((module) => ({
+  const compatiblePresets = deployConfig.presets.filter(
+    (preset) =>
+      preset.environments.includes(environmentId) &&
+      (!preset.provider || preset.provider === environment.provider)
+  );
+  if (compatiblePresets.length === 0) {
+    throw new Error(
+      `No compatible deploy preset found for '${environmentId}' in template '${project.type}'.`
+    );
+  }
+  const selectedPresetId = releaseSelection?.selectedDeployPresetId?.trim();
+  const selectedPreset =
+    (selectedPresetId
+      ? compatiblePresets.find((preset) => preset.id === selectedPresetId)
+      : undefined) ?? compatiblePresets[0];
+  if (!selectedPreset) {
+    throw new Error(
+      `No deploy preset could be resolved for '${environmentId}' in template '${project.type}'.`
+    );
+  }
+  Object.assign(effectiveConstraints, selectedPreset.constraints);
+  if (!selectedPresetId || selectedPresetId !== selectedPreset.id) {
+    const nowIso = new Date().toISOString();
+    saveProjectConfig(projectPath, {
+      ...project,
+      releaseState: {
+        environments: {
+          ...(project.releaseState?.environments ?? {}),
+          [environmentId]: {
+            ...(project.releaseState?.environments?.[environmentId] ?? {}),
+            selectedDeployPresetId: selectedPreset.id,
+            selectedAt: nowIso,
+          },
+        },
+      },
+    });
+  }
+  const resolvedModules = plan.modules.map((module) => ({
     ...module,
     constraints: effectiveConstraints,
   }));
-  const dirPath = join(projectPath, ".tz", "infra", environmentId);
+  const dirPath = join(projectPath, ".tz", "deploy", environmentId);
   mkdirSync(dirPath, { recursive: true });
 
   const mainTfPath = join(dirPath, "main.tf");
-  const metadataPath = join(dirPath, "tz-materialized.json");
+  const metadataPath = join(dirPath, "tz-deploy-workspace.json");
 
-  const capabilitiesLiteral = jsonLiteral(materializedModules.map((module) => module.capability));
+  const capabilitiesLiteral = jsonLiteral(resolvedModules.map((module) => module.capability));
   const constraintsLiteral = jsonLiteral(effectiveConstraints);
   const projectSlug = slugify(project.name || basename(projectPath));
   const appBaseUrlDefault =
     typeof effectiveConstraints.domain === "string" && effectiveConstraints.domain.trim().length > 0
       ? `https://${effectiveConstraints.domain.trim()}`
       : `https://${projectSlug}-${environmentId}.example.com`;
-  const hasAppRuntime = materializedModules.some((module) => module.capability === "appRuntime");
-  const hasEnvConfig = materializedModules.some((module) => module.capability === "envConfig");
-  const hasPostgres = materializedModules.some((module) => module.capability === "postgres");
+  const hasAppRuntime = resolvedModules.some((module) => module.capability === "appRuntime");
+  const hasEnvConfig = resolvedModules.some((module) => module.capability === "envConfig");
+  const hasPostgres = resolvedModules.some((module) => module.capability === "postgres");
 
   const providerExpressionByOutputKey: Record<string, string> = {};
   if (hasEnvConfig) {
@@ -333,8 +382,8 @@ resource "aws_secretsmanager_secret_version" "database_url" {
 }` : ""}
 `;
 
-  const mainTf = `# v1 materialization scaffold generated by tz-cli.
-# This file establishes a deterministic infra workspace per environment.
+  const mainTf = `# Deploy workspace scaffold generated by tz-cli.
+# This file establishes a deterministic deploy workspace per environment.
 variable "tz_environment_id" {
   type        = string
   description = "Environment id passed by tz deploy runner."
@@ -378,7 +427,7 @@ ${outputBlocks}
       {
         generatedAt: new Date().toISOString(),
         environmentId,
-        modules: materializedModules,
+        modules: resolvedModules,
       },
       null,
       2

@@ -50,7 +50,7 @@ tz
 
 ### Deployments commands
 
-Preferred flow: run deployments from the interactive app Dashboard under **Infra Environments**.
+Preferred flow: run deployments from the interactive app Dashboard under **Deployment Environments**.
 Use commands below for automation, CI, or non-interactive usage.
 
 You can run deployments actions directly from the shell:

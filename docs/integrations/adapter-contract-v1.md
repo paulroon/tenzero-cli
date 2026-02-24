@@ -62,7 +62,7 @@ export interface AdapterContext {
   dryRun?: boolean;
 }
 
-export interface InfraEnvironmentSpec {
+export interface DeployEnvironmentSpec {
   id: string;
   label: string;
   capabilities: string[];
@@ -168,11 +168,11 @@ export interface ProviderAdapterV1 {
   readonly providerId: string;
   readonly supportedCapabilities: string[];
 
-  plan(ctx: AdapterContext, env: InfraEnvironmentSpec): Promise<PlanResult>;
-  apply(ctx: AdapterContext, env: InfraEnvironmentSpec): Promise<ApplyResult>;
-  destroy(ctx: AdapterContext, env: InfraEnvironmentSpec): Promise<DestroyResult>;
-  report(ctx: AdapterContext, env: InfraEnvironmentSpec): Promise<ReportResult>;
-  resolveOutputs(ctx: AdapterContext, env: InfraEnvironmentSpec): Promise<ResolveOutputsResult>;
+  plan(ctx: AdapterContext, env: DeployEnvironmentSpec): Promise<PlanResult>;
+  apply(ctx: AdapterContext, env: DeployEnvironmentSpec): Promise<ApplyResult>;
+  destroy(ctx: AdapterContext, env: DeployEnvironmentSpec): Promise<DestroyResult>;
+  report(ctx: AdapterContext, env: DeployEnvironmentSpec): Promise<ReportResult>;
+  resolveOutputs(ctx: AdapterContext, env: DeployEnvironmentSpec): Promise<ResolveOutputsResult>;
 }
 ```
 

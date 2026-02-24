@@ -15,11 +15,13 @@ type Props = {
   selectedEnvironmentId: string;
   status: string;
   liveUrl?: string;
+  environmentProvider?: string;
   canDestroy: boolean;
-  hasInfraConfig: boolean;
-  infraTfCount: number;
+  hasDeployWorkspace: boolean;
+  deployTfCount: number;
   firstTfPath?: string;
   releaseTag?: string;
+  releasePresetId?: string;
   imageOverride?: string;
   imageDigest?: string;
   lastApplySummary?: {
@@ -50,11 +52,13 @@ export function EnvironmentActionsView({
   selectedEnvironmentId,
   status,
   liveUrl,
+  environmentProvider,
   canDestroy,
-  hasInfraConfig,
-  infraTfCount,
+  hasDeployWorkspace,
+  deployTfCount,
   firstTfPath,
   releaseTag,
+  releasePresetId,
   imageOverride,
   imageDigest,
   lastApplySummary,
@@ -83,13 +87,15 @@ export function EnvironmentActionsView({
       </Text>
       <Text>Current status: {status}</Text>
       <Text>
-        Infra config: {hasInfraConfig ? `Ready (${infraTfCount} .tf file(s))` : "Missing (.tf files not found)"}
+        Deploy workspace: {hasDeployWorkspace ? `Ready (${deployTfCount} .tf file(s))` : "Missing (.tf files not found)"}
       </Text>
-      {hasInfraConfig && firstTfPath && <Text dimColor>First match: {firstTfPath}</Text>}
-      {!hasInfraConfig && (
-        <Text dimColor>Infra config will be generated automatically on first deployment action.</Text>
+      {hasDeployWorkspace && firstTfPath && <Text dimColor>First match: {firstTfPath}</Text>}
+      {!hasDeployWorkspace && (
+        <Text dimColor>Deploy workspace will be generated automatically on first deployment action.</Text>
       )}
       <Text>Release: {releaseTag ?? "(not selected)"}</Text>
+      <Text>Preset: {releasePresetId ?? "(not selected)"}</Text>
+      <Text dimColor>Provider: {environmentProvider ?? "(template default)"}</Text>
       <Text dimColor>Resolved release reference: {imageOverride ?? "(not selected)"}</Text>
       {imageDigest && <Text dimColor>Release proof: {imageDigest}</Text>}
       {liveUrl && (

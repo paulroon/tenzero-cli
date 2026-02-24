@@ -2,14 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { saveProjectConfig } from "@/lib/config/project";
+import { loadProjectConfig, saveProjectConfig } from "@/lib/config/project";
 import { getUserConfigsDir } from "@/lib/paths";
-import { materializeInfraForEnvironment } from "@/lib/deployments/materialize";
+import { prepareDeployWorkspaceForEnvironment } from "@/lib/deployments/deployWorkspace";
 
 const tmpRoots: string[] = [];
 const TEST_TEMPLATE_ID = "other";
 const fixtureTemplateDir = join(getUserConfigsDir(), TEST_TEMPLATE_ID);
 const fixtureTemplatePath = join(fixtureTemplateDir, "config.yaml");
+const fixtureDeployPath = join(fixtureTemplateDir, "deploy.yaml");
 let existingTemplateBackupDir: string | null = null;
 let existingTemplateBackupRoot: string | null = null;
 const fixtureSource = `label: Test Template
@@ -18,29 +19,59 @@ version: "1"
 pipeline:
   - type: run
     command: "echo noop"
-infra:
-  version: "1"
-  environments:
-    - id: prod
-      label: Production
-      capabilities:
-        - appRuntime
-        - envConfig
-        - postgres
-      constraints:
-        enableAppRunner: false
-      outputs:
-        - key: APP_BASE_URL
-          type: string
-        - key: DATABASE_URL
-          type: secret_ref
-        - key: NEXTAUTH_SECRET
-          type: secret_ref
+`;
+const deployFixtureSource = `version: "2"
+providers:
+  - id: aws-primary
+    driver:
+      type: opentofu
+      entry: deployments/opentofu/main.tf
+environments:
+  - id: prod
+    label: Production
+    provider: aws-primary
+    capabilities:
+      - appRuntime
+      - envConfig
+      - postgres
+    constraints:
+      appPort: 9000
+    outputs:
+      - key: APP_BASE_URL
+        type: string
+        required: true
+      - key: DATABASE_URL
+        type: secret_ref
+        required: true
+      - key: NEXTAUTH_SECRET
+        type: secret_ref
+        required: true
+presets:
+  - id: cheap-and-cheerful
+    label: Cheap and cheerful
+    description: low cost
+    environments: [prod]
+    provider: aws-primary
+    constraints:
+      appRunnerCpu: 1024
+      appRunnerMemory: 2048
+      appRunnerMinSize: 1
+      appRunnerMaxSize: 1
+  - id: maximum-effort-at-a-price
+    label: Maximum effort
+    description: high perf
+    environments: [prod]
+    provider: aws-primary
+    constraints:
+      appRunnerCpu: 2048
+      appRunnerMemory: 4096
+      appRunnerMinSize: 2
+      appRunnerMaxSize: 8
 `;
 
 beforeEach(() => {
   if (existsSync(fixtureTemplateDir)) {
-    const backupRoot = mkdtempSync(join(tmpdir(), "tz-materialize-template-backup-"));
+    const backupRoot = mkdtempSync(join(tmpdir(), "tz-deploy-workspace-template-backup-"));
     const backupDir = join(backupRoot, TEST_TEMPLATE_ID);
     cpSync(fixtureTemplateDir, backupDir, { recursive: true });
     existingTemplateBackupDir = backupDir;
@@ -52,10 +83,11 @@ beforeEach(() => {
   }
   mkdirSync(fixtureTemplateDir, { recursive: true });
   writeFileSync(fixtureTemplatePath, fixtureSource, "utf-8");
+  writeFileSync(fixtureDeployPath, deployFixtureSource, "utf-8");
 });
 
 function createRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "tz-materialize-"));
+  const root = mkdtempSync(join(tmpdir(), "tz-deploy-workspace-"));
   tmpRoots.push(root);
   return root;
 }
@@ -80,7 +112,7 @@ afterEach(() => {
   }
 });
 
-describe("infra materialization", () => {
+describe("deploy workspace preparation", () => {
   test("generates env workspace files with backend-region defaulting", () => {
     const root = createRoot();
     saveProjectConfig(root, {
@@ -88,7 +120,7 @@ describe("infra materialization", () => {
       type: TEST_TEMPLATE_ID,
     });
 
-    const result = materializeInfraForEnvironment(root, "prod", {
+    const result = prepareDeployWorkspaceForEnvironment(root, "prod", {
       backendRegion: "eu-west-2",
     });
     const mainTfPath = result.filePaths.find((path) => path.endsWith("main.tf"));
@@ -115,8 +147,21 @@ describe("infra materialization", () => {
       type: TEST_TEMPLATE_ID,
     });
 
-    expect(() => materializeInfraForEnvironment(root, "uat")).toThrow(
+    expect(() => prepareDeployWorkspaceForEnvironment(root, "uat")).toThrow(
       "Environment 'uat' is not defined"
+    );
+  });
+
+  test("fails when deploy.yaml is missing for the template", () => {
+    const root = createRoot();
+    saveProjectConfig(root, {
+      name: "Missing deploy template app",
+      type: TEST_TEMPLATE_ID,
+    });
+    rmSync(fixtureDeployPath, { force: true });
+
+    expect(() => prepareDeployWorkspaceForEnvironment(root, "prod")).toThrow(
+      "has no deploy.yaml definition"
     );
   });
 
@@ -136,7 +181,7 @@ describe("infra materialization", () => {
       },
     });
 
-    const result = materializeInfraForEnvironment(root, "prod", {
+    const result = prepareDeployWorkspaceForEnvironment(root, "prod", {
       backendRegion: "eu-west-2",
     });
     const mainTfPath = result.filePaths.find((path) => path.endsWith("main.tf"));
@@ -150,6 +195,50 @@ describe("infra materialization", () => {
     );
     expect(contents).toContain(
       '\\"appImageIdentifier\\":\\"206414186603.dkr.ecr.eu-west-2.amazonaws.com/tz-app-prod@sha256:abc123\\"'
+    );
+  });
+
+  test("applies selected deploy preset constraint overrides", () => {
+    const root = createRoot();
+    saveProjectConfig(root, {
+      name: "Preset selected app",
+      type: TEST_TEMPLATE_ID,
+      releaseState: {
+        environments: {
+          prod: {
+            selectedDeployPresetId: "maximum-effort-at-a-price",
+          },
+        },
+      },
+    });
+
+    const result = prepareDeployWorkspaceForEnvironment(root, "prod", {
+      backendRegion: "eu-west-2",
+    });
+    const mainTfPath = result.filePaths.find((path) => path.endsWith("main.tf"));
+    expect(mainTfPath).toBeDefined();
+    if (!mainTfPath) return;
+    const contents = readFileSync(mainTfPath, "utf-8");
+    expect(contents).toContain('\\"appRunnerCpu\\":2048');
+    expect(contents).toContain('\\"appRunnerMemory\\":4096');
+    expect(contents).toContain('\\"appRunnerMinSize\\":2');
+    expect(contents).toContain('\\"appRunnerMaxSize\\":8');
+  });
+
+  test("auto-selects and persists default deploy preset when not set", () => {
+    const root = createRoot();
+    saveProjectConfig(root, {
+      name: "Preset default app",
+      type: TEST_TEMPLATE_ID,
+    });
+
+    prepareDeployWorkspaceForEnvironment(root, "prod", {
+      backendRegion: "eu-west-2",
+    });
+
+    const updated = loadProjectConfig(root);
+    expect(updated?.releaseState?.environments?.prod?.selectedDeployPresetId).toBe(
+      "cheap-and-cheerful"
     );
   });
 });

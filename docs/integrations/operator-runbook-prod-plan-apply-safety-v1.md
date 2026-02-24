@@ -4,7 +4,7 @@
 
 This runbook covers mandatory safety checks for `prod` plan/apply.
 
-In interactive mode, use: App Dashboard -> Infra Environments -> `prod`.
+In interactive mode, use: App Dashboard -> Deployment Environments -> `prod`.
 
 ## Mandatory policies
 

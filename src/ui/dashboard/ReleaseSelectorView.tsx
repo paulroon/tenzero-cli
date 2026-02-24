@@ -2,12 +2,15 @@ import React from "react";
 import { Box, Text } from "ink";
 import { Alert, Select, Spinner, TextInput } from "@inkjs/ui";
 import type { ReleaseSelection } from "@/ui/dashboard/types";
+import { buildReleaseSelectorOptions } from "@/ui/dashboard/releaseSelectorOptions";
 
 type Props = {
   environmentId: string;
+  environmentProvider?: string;
   loadingReleaseTags: boolean;
   createReleaseEntry: boolean;
   currentSelection?: ReleaseSelection;
+  availableDeployPresets: Array<{ id: string; label: string; description: string }>;
   availableReleaseTags: string[];
   suggestedReleaseTag: string;
   error?: string | null;
@@ -15,14 +18,17 @@ type Props = {
   onStartCreate: () => void;
   onClear: () => void;
   onBack: () => void;
+  onSelectPreset: (presetId: string) => void;
   onSelectTag: (tag: string) => void;
 };
 
 export function ReleaseSelectorView({
   environmentId,
+  environmentProvider,
   loadingReleaseTags,
   createReleaseEntry,
   currentSelection,
+  availableDeployPresets,
   availableReleaseTags,
   suggestedReleaseTag,
   error,
@@ -30,6 +36,7 @@ export function ReleaseSelectorView({
   onStartCreate,
   onClear,
   onBack,
+  onSelectPreset,
   onSelectTag,
 }: Props) {
   if (loadingReleaseTags) {
@@ -66,22 +73,25 @@ export function ReleaseSelectorView({
       <Text color="yellow" bold>
         Select release ({environmentId})
       </Text>
+      <Text dimColor>Provider: {environmentProvider ?? "(template default)"}</Text>
       <Text>Choose a release to deploy for this environment.</Text>
+      <Text dimColor>
+        Current preset: {currentSelection?.selectedDeployPresetId ?? "(not selected)"}
+      </Text>
+      {!currentSelection?.selectedDeployPresetId && availableDeployPresets.length > 0 ? (
+        <Alert variant="warning">Select a deploy preset before running deployment.</Alert>
+      ) : null}
       <Text dimColor>Current release: {currentSelection?.selectedReleaseTag ?? "(not selected)"}</Text>
       <Text dimColor>Resolved release reference: {currentSelection?.selectedImageRef ?? "(not selected)"}</Text>
+      {availableDeployPresets.length === 0 && <Text dimColor>No deploy presets available for this environment.</Text>}
       {availableReleaseTags.length === 0 && <Text dimColor>No existing releases found.</Text>}
       <Select
-        options={[
-          ...availableReleaseTags.map((tag) => ({
-            label: currentSelection?.selectedReleaseTag === tag ? `${tag} (current)` : tag,
-            value: `tag:${tag}`,
-          })),
-          ...(suggestedReleaseTag
-            ? [{ label: `Create new release... (${suggestedReleaseTag})`, value: "__create__" }]
-            : [{ label: "Create new release...", value: "__create__" }]),
-          { label: "Clear release selection", value: "__clear__" },
-          { label: "Back", value: "__back__" },
-        ]}
+        options={buildReleaseSelectorOptions({
+          availableDeployPresets,
+          availableReleaseTags,
+          currentSelection,
+          suggestedReleaseTag,
+        })}
         onChange={(value) => {
           if (value === "__create__") {
             onStartCreate();
@@ -93,6 +103,10 @@ export function ReleaseSelectorView({
           }
           if (value === "__back__") {
             onBack();
+            return;
+          }
+          if (value.startsWith("preset:")) {
+            onSelectPreset(value.slice(7));
             return;
           }
           if (value.startsWith("tag:")) {

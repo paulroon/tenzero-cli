@@ -31,7 +31,7 @@ function readyConfig(): TzConfig {
 
 function withMaterialize<T extends Record<string, unknown>>(overrides: T): T {
   return {
-    materializeInfra: () => ({ directoryPath: "/tmp/.tz/infra/test", filePaths: [] }),
+    prepareDeployWorkspace: () => ({ directoryPath: "/tmp/.tz/deploy/test", filePaths: [] }),
     loadReleaseConfig: () => ({
       config: { version: "1.2.3", tagPrefix: "v" },
       exists: true,
@@ -249,7 +249,7 @@ describe("deployments commands", () => {
     expect(lines.join("\n")).toContain("Refresh cycle 2:");
   });
 
-  test("fails fast when infra materialization fails", async () => {
+  test("fails fast when deploy workspace preparation fails", async () => {
     const lines: string[] = [];
     const result = await maybeRunDeploymentsCommand(["deployments", "plan", "--env", "prod"], {
       loadUserConfig: () => readyConfig(),
@@ -261,13 +261,13 @@ describe("deployments commands", () => {
       assertMode: () => undefined,
       createAdapter: () => ({} as never),
       runGitPreflight: async () => undefined,
-      materializeInfra: () => {
-        throw new Error("Template 'nextjs' has no infra definition.");
+      prepareDeployWorkspace: () => {
+        throw new Error("Template 'nextjs' has no deploy.yaml definition.");
       },
       writeLine: (line) => lines.push(line),
     });
     expect(result.exitCode).toBe(1);
-    expect(lines.join("\n")).toContain("has no infra definition");
+    expect(lines.join("\n")).toContain("has no deploy.yaml definition");
   });
 
   test("blocks deployment when release config is missing", async () => {
@@ -279,7 +279,7 @@ describe("deployments commands", () => {
       assertMode: () => undefined,
       createAdapter: () => ({} as never),
       runGitPreflight: async () => undefined,
-      materializeInfra: () => ({ directoryPath: "/tmp/.tz/infra/prod", filePaths: [] }),
+      prepareDeployWorkspace: () => ({ directoryPath: "/tmp/.tz/deploy/prod", filePaths: [] }),
       writeLine: (line) => lines.push(line),
     });
     expect(result.exitCode).toBe(1);
@@ -300,7 +300,7 @@ describe("deployments commands", () => {
       runGitPreflight: async () => {
         throw new Error("Deployment blocked: commit or stash changes first.");
       },
-      materializeInfra: () => ({ directoryPath: "/tmp/.tz/infra/prod", filePaths: [] }),
+      prepareDeployWorkspace: () => ({ directoryPath: "/tmp/.tz/deploy/prod", filePaths: [] }),
       writeLine: (line) => lines.push(line),
     });
     expect(result.exitCode).toBe(1);
@@ -322,7 +322,7 @@ describe("deployments commands", () => {
       validateDeployTemplateForProject: () => {
         throw new Error("Deployment blocked: template deploy config is invalid.");
       },
-      materializeInfra: () => ({ directoryPath: "/tmp/.tz/infra/prod", filePaths: [] }),
+      prepareDeployWorkspace: () => ({ directoryPath: "/tmp/.tz/deploy/prod", filePaths: [] }),
       writeLine: (line) => lines.push(line),
     });
     expect(result.exitCode).toBe(1);
@@ -342,7 +342,7 @@ describe("deployments commands", () => {
       createAdapter: () => ({} as never),
       runGitPreflight: async () => undefined,
       validateDeployTemplateForProject: () => undefined,
-      materializeInfra: () => ({ directoryPath: "/tmp/.tz/infra/prod", filePaths: [] }),
+      prepareDeployWorkspace: () => ({ directoryPath: "/tmp/.tz/deploy/prod", filePaths: [] }),
       validatePostInterpolationArtifacts: () => {
         throw new Error("Deployment blocked: unresolved interpolation token detected.");
       },

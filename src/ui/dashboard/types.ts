@@ -25,4 +25,5 @@ export type ReleaseBuildMonitorState = {
 export type ReleaseSelection = {
   selectedImageRef?: string;
   selectedReleaseTag?: string;
+  selectedDeployPresetId?: string;
 };

@@ -1,14 +1,17 @@
-import type { InfraConfig, InfraEnvironmentSpec, InfraOutputSpec } from "@/lib/config";
+import type {
+  DeployTemplateEnvironmentSpec,
+  DeployTemplateOutputSpec,
+} from "@/lib/config/deployTemplate";
 import {
   getProjectEnvironmentOutputs,
   upsertProjectEnvironmentOutputs,
   type ProjectEnvironmentOutputWrite,
 } from "@/lib/config/project";
 
-type InfraCapability = InfraEnvironmentSpec["capabilities"][number];
+type DeployCapability = DeployTemplateEnvironmentSpec["capabilities"][number];
 
 export type PlannedEnvironmentModule = {
-  capability: InfraCapability;
+  capability: DeployCapability;
   moduleId: string;
   constraints: Record<string, unknown>;
 };
@@ -19,22 +22,22 @@ export type PlannedEnvironmentDeployment = {
   modules: PlannedEnvironmentModule[];
 };
 
-const CAPABILITY_ORDER: InfraCapability[] = ["appRuntime", "envConfig", "postgres", "dns"];
+const CAPABILITY_ORDER: DeployCapability[] = ["appRuntime", "envConfig", "postgres", "dns"];
 
-const CAPABILITY_MODULE_MAP: Record<InfraCapability, string> = {
+const CAPABILITY_MODULE_MAP: Record<DeployCapability, string> = {
   appRuntime: "module.appRuntime.v1",
   envConfig: "module.envConfig.v1",
   postgres: "module.postgres.v1",
   dns: "module.dns.v1",
 };
 
-function uniqueCapabilities(capabilities: InfraCapability[]): InfraCapability[] {
+function uniqueCapabilities(capabilities: DeployCapability[]): DeployCapability[] {
   return Array.from(new Set(capabilities));
 }
 
-function assertEnvironmentCapabilityCombination(env: InfraEnvironmentSpec): void {
+function assertEnvironmentCapabilityCombination(env: DeployTemplateEnvironmentSpec): void {
   const capabilities = uniqueCapabilities(env.capabilities);
-  const has = (capability: InfraCapability) => capabilities.includes(capability);
+  const has = (capability: DeployCapability) => capabilities.includes(capability);
 
   if (has("postgres") && !has("appRuntime")) {
     throw new Error(
@@ -58,13 +61,13 @@ function assertEnvironmentCapabilityCombination(env: InfraEnvironmentSpec): void
 }
 
 export function planEnvironmentDeployment(
-  infra: InfraConfig,
+  environments: DeployTemplateEnvironmentSpec[],
   environmentId: string
 ): PlannedEnvironmentDeployment {
-  const env = infra.environments.find((item) => item.id === environmentId);
+  const env = environments.find((item) => item.id === environmentId);
   if (!env) {
     throw new Error(
-      `Environment '${environmentId}' not defined in infra config. Add it under infra.environments.`
+      `Environment '${environmentId}' not defined in deploy config. Add it under deploy.environments.`
     );
   }
   assertEnvironmentCapabilityCombination(env);
@@ -86,7 +89,7 @@ export function planEnvironmentDeployment(
 }
 
 function parseOutputValue(
-  spec: InfraOutputSpec,
+  spec: DeployTemplateOutputSpec,
   raw: unknown,
   source: "providerOutput" | "templateDefault",
   generatedCredentialKeys: Set<string>
@@ -139,7 +142,7 @@ function parseOutputValue(
 
 export function persistResolvedEnvironmentOutputs(args: {
   projectPath: string;
-  environment: InfraEnvironmentSpec;
+  environment: DeployTemplateEnvironmentSpec;
   providerOutputs: Record<string, unknown>;
   generatedCredentialKeys?: string[];
 }): ReturnType<typeof getProjectEnvironmentOutputs> {
@@ -147,7 +150,7 @@ export function persistResolvedEnvironmentOutputs(args: {
   for (const key of Object.keys(args.providerOutputs)) {
     if (!knownKeys.has(key)) {
       throw new Error(
-        `Unknown provider output '${key}' for environment '${args.environment.id}'. Add it to infra.outputs or remove it from provider mapping.`
+        `Unknown provider output '${key}' for environment '${args.environment.id}'. Add it to deploy outputs or remove it from provider mapping.`
       );
     }
   }

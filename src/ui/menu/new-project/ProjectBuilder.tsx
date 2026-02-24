@@ -11,6 +11,7 @@ import {
 import {
   type TzConfig,
   listProjectConfigs,
+  loadDeployTemplateConfigWithError,
   loadProjectBuilderConfig,
   getApplicableQuestionNodes,
   getApplicableSteps,
@@ -209,6 +210,13 @@ export default function ProjectBuilder({
   const questionNodes = getQuestionNodes(builderConfig, answers);
   const steps = builderConfig ? getApplicableSteps(builderConfig, answers) : [];
   const currentNode = questionNodes[stepIndex];
+  const hasDeployTemplate = (() => {
+    if (!builderConfig) return false;
+    const templateMeta = listProjectConfigs().find((entry) => entry.id === builderConfig.id);
+    if (!templateMeta) return false;
+    const deployConfig = loadDeployTemplateConfigWithError(templateMeta.path);
+    return deployConfig.exists && !!deployConfig.config;
+  })();
 
   const handleConfigSelect = useCallback((id: string) => {
     if (checkingDependencies) return;
@@ -303,8 +311,8 @@ export default function ProjectBuilder({
         type: "finalize",
         config: {
           projectType: builderConfig.type,
-          bootstrapReleaseConfig: !!builderConfig.infra,
-          bootstrapReleaseWorkflow: !!builderConfig.infra,
+          bootstrapReleaseConfig: hasDeployTemplate,
+          bootstrapReleaseWorkflow: hasDeployTemplate,
           awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
         },
       },
@@ -322,8 +330,8 @@ export default function ProjectBuilder({
           pipeline: builderConfig.pipeline,
           configDir: builderConfig._configDir,
           projectType: builderConfig.type,
-          bootstrapReleaseConfig: !!builderConfig.infra,
-          bootstrapReleaseWorkflow: !!builderConfig.infra,
+          bootstrapReleaseConfig: hasDeployTemplate,
+          bootstrapReleaseWorkflow: hasDeployTemplate,
           awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
           profile: { name: config.name, email: config.email ?? "" },
           allowShellSyntaxCommands,
@@ -391,8 +399,8 @@ export default function ProjectBuilder({
         type: "finalize",
         config: {
           projectType: builderConfig.type,
-          bootstrapReleaseConfig: !!builderConfig.infra,
-          bootstrapReleaseWorkflow: !!builderConfig.infra,
+          bootstrapReleaseConfig: hasDeployTemplate,
+          bootstrapReleaseWorkflow: hasDeployTemplate,
           awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
         },
       },
@@ -415,8 +423,8 @@ export default function ProjectBuilder({
           pipeline: builderConfig.pipeline,
           configDir: builderConfig._configDir,
           projectType: builderConfig.type,
-          bootstrapReleaseConfig: !!builderConfig.infra,
-          bootstrapReleaseWorkflow: !!builderConfig.infra,
+          bootstrapReleaseConfig: hasDeployTemplate,
+          bootstrapReleaseWorkflow: hasDeployTemplate,
           awsRegionForReleaseWorkflow: config.integrations?.aws?.backend?.region,
           profile: { name: config.name, email: config.email ?? "" },
           allowShellSyntaxCommands: true,
@@ -552,7 +560,7 @@ export default function ProjectBuilder({
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="green">Project created successfully!</Text>
-        {builderConfig.infra && (
+        {hasDeployTemplate && (
           <Box flexDirection="column">
             <Text dimColor>
               Initialized release config at .tz/release.yaml (version 0.1.0, release prefix v).

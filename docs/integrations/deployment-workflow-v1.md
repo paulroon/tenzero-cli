@@ -18,7 +18,7 @@ Deployments mode is enabled only when:
 
 - Input: `appInstallId`, `environmentId`.
 - Acquire lock for environment scope.
-- Build desired state from template `infra` + app/env config.
+- Build desired state from deploy template contract + app/env config.
 - Produce plan summary (`add/change/destroy`) and drift indication.
 - Release lock.
 

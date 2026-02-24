@@ -17,7 +17,7 @@ const FINALIZE_STATUS_PATH = [".tz", "finalize-status.json"];
 const TENZERO_GITIGNORE_ENTRIES = [
   TZ_PROJECT_CONFIG_FILENAME,
   ".tz/finalize-status.json",
-  ".tz/infra/",
+  ".tz/deploy/",
 ] as const;
 
 function isDockerizedValue(value: unknown): boolean {

@@ -88,8 +88,8 @@ export class OpenTofuEngine {
     this.resolveWorkspacePath =
       args.resolveWorkspacePath ??
       ((projectPath: string, environmentId: string) => {
-        const materializedPath = join(projectPath, ".tz", "infra", environmentId);
-        return existsSync(materializedPath) ? materializedPath : projectPath;
+        const deployWorkspacePath = join(projectPath, ".tz", "deploy", environmentId);
+        return existsSync(deployWorkspacePath) ? deployWorkspacePath : projectPath;
       });
   }
 

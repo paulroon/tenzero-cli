@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { saveProjectConfig } from "@/lib/config/project";
-import type { InfraConfig, InfraEnvironmentSpec } from "@/lib/config";
+import type { DeployTemplateEnvironmentSpec } from "@/lib/config";
 import {
   persistResolvedEnvironmentOutputs,
   planEnvironmentDeployment,
@@ -37,20 +37,18 @@ afterEach(() => {
 
 describe("capability planner", () => {
   test("composes deterministic modules regardless of capability order", () => {
-    const infra: InfraConfig = {
-      version: "1",
-      environments: [
-        {
-          id: "prod",
-          label: "Production",
-          capabilities: ["dns", "postgres", "appRuntime", "envConfig"],
-          constraints: { domain: "example.com" },
-          outputs: [],
-        },
-      ],
-    };
+    const environments: DeployTemplateEnvironmentSpec[] = [
+      {
+        id: "prod",
+        label: "Production",
+        provider: "aws-primary",
+        capabilities: ["dns", "postgres", "appRuntime", "envConfig"],
+        constraints: { domain: "example.com" },
+        outputs: [],
+      },
+    ];
 
-    const plan = planEnvironmentDeployment(infra, "prod");
+    const plan = planEnvironmentDeployment(environments, "prod");
     expect(plan.modules.map((m) => m.capability)).toEqual([
       "appRuntime",
       "envConfig",
@@ -60,49 +58,46 @@ describe("capability planner", () => {
   });
 
   test("fails fast on unsupported capability combination", () => {
-    const infra: InfraConfig = {
-      version: "1",
-      environments: [
-        {
-          id: "test",
-          label: "Test",
-          capabilities: ["postgres"],
-          constraints: {},
-          outputs: [],
-        },
-      ],
-    };
+    const environments: DeployTemplateEnvironmentSpec[] = [
+      {
+        id: "test",
+        label: "Test",
+        provider: "aws-primary",
+        capabilities: ["postgres"],
+        constraints: {},
+        outputs: [],
+      },
+    ];
 
-    expect(() => planEnvironmentDeployment(infra, "test")).toThrow(
+    expect(() => planEnvironmentDeployment(environments, "test")).toThrow(
       "postgres requires appRuntime"
     );
   });
 
   test("fails when dns capability is missing required domain constraint", () => {
-    const infra: InfraConfig = {
-      version: "1",
-      environments: [
-        {
-          id: "prod",
-          label: "Production",
-          capabilities: ["appRuntime", "dns"],
-          constraints: {},
-          outputs: [],
-        },
-      ],
-    };
+    const environments: DeployTemplateEnvironmentSpec[] = [
+      {
+        id: "prod",
+        label: "Production",
+        provider: "aws-primary",
+        capabilities: ["appRuntime", "dns"],
+        constraints: {},
+        outputs: [],
+      },
+    ];
 
-    expect(() => planEnvironmentDeployment(infra, "prod")).toThrow(
+    expect(() => planEnvironmentDeployment(environments, "prod")).toThrow(
       "dns capability requires constraints.domain"
     );
   });
 });
 
 describe("output resolver mapping", () => {
-  function envSpec(): InfraEnvironmentSpec {
+  function envSpec(): DeployTemplateEnvironmentSpec {
     return {
       id: "prod",
       label: "Production",
+      provider: "aws-primary",
       capabilities: ["appRuntime", "postgres", "envConfig"],
       constraints: {},
       outputs: [

@@ -12,7 +12,7 @@ Use this checklist before tagging a Deployments v1 release.
 
 ## Core command smoke
 
-For interactive coverage, run the same lifecycle from App Dashboard -> Infra Environments.
+For interactive coverage, run the same lifecycle from App Dashboard -> Deployment Environments.
 
 - [ ] `tz deployments plan --env test` succeeds and prints plan summary.
 - [ ] `tz deployments report --env test` succeeds and prints status/drift.

@@ -8,11 +8,12 @@ import {
   syncProjects,
   saveConfig,
   DEFAULT_EDITOR,
+  listProjectConfigs,
+  loadDeployTemplateConfigWithError,
   loadProjectReleaseConfigWithError,
   type TzProjectConfig,
   type TzConfig,
 } from "@/lib/config";
-import { loadProjectBuilderConfig } from "@/lib/config/projectBuilder";
 import { loadProjectConfig, saveProjectConfig } from "@/lib/config/project";
 import { getMakefileTargets } from "@/lib/makefile";
 import { callShell } from "@/lib/shell";
@@ -21,8 +22,8 @@ import { getInkInstance, setInkInstance } from "@/lib/inkInstance";
 import { getErrorMessage } from "@/lib/errors";
 import { evaluateProjectDeleteGuard } from "@/lib/deployments/deleteGuard";
 import { maybeRunDeploymentsCommand } from "@/lib/deployments/commands";
-import { evaluateInfraConfigReadiness } from "@/lib/deployments/infraConfigCheck";
-import { materializeInfraForEnvironment } from "@/lib/deployments/materialize";
+import { evaluateDeployWorkspaceReadiness } from "@/lib/deployments/deployWorkspaceCheck";
+import { prepareDeployWorkspaceForEnvironment } from "@/lib/deployments/deployWorkspace";
 import {
   createReleaseTagForProject,
   ensureReleaseTagForProject,
@@ -47,10 +48,11 @@ import { ReleaseBuildMonitorView } from "@/ui/dashboard/ReleaseBuildMonitorView"
 import { PendingApplyView } from "@/ui/dashboard/PendingApplyView";
 import { EnvironmentActionsView } from "@/ui/dashboard/EnvironmentActionsView";
 import { ReleaseSelectorView } from "@/ui/dashboard/ReleaseSelectorView";
-import { InfraEnvironmentsListView } from "@/ui/dashboard/InfraEnvironmentsListView";
+import { DeploymentEnvironmentsListView } from "@/ui/dashboard/DeploymentEnvironmentsListView";
 import { DashboardHomeView } from "@/ui/dashboard/DashboardHomeView";
 import { ConfirmDestroyView } from "@/ui/dashboard/ConfirmDestroyView";
 import { ConfirmDriftView } from "@/ui/dashboard/ConfirmDriftView";
+import { resolveNextReleaseSelection } from "@/ui/dashboard/releaseSelectionState";
 import type {
   DeploymentStep,
   DeploymentStepId,
@@ -165,6 +167,12 @@ export default function Dashboard({
   const [createReleaseEntry, setCreateReleaseEntry] = useState(false);
   const [loadingReleaseTags, setLoadingReleaseTags] = useState(false);
   const [availableReleaseTags, setAvailableReleaseTags] = useState<string[]>([]);
+  const [availableDeployPresets, setAvailableDeployPresets] = useState<
+    Array<{ id: string; label: string; description: string }>
+  >([]);
+  const [selectedEnvironmentProvider, setSelectedEnvironmentProvider] = useState<string | null>(
+    null
+  );
   const [suggestedReleaseTag, setSuggestedReleaseTag] = useState<string>("");
   const [releaseBuildMonitor, setReleaseBuildMonitor] = useState<ReleaseBuildMonitorState | null>(
     null
@@ -291,32 +299,34 @@ export default function Dashboard({
     () => (currentProject ? getMakefileTargets(currentProject.path) : []),
     [currentProject?.path]
   );
-  const templateConfig = useMemo(
-    () => (currentProject ? loadProjectBuilderConfig(currentProject.type) : null),
-    [currentProject?.type]
-  );
+  const deployTemplateConfig = useMemo(() => {
+    if (!currentProject) return null;
+    const templateMeta = listProjectConfigs().find((entry) => entry.id === currentProject.type);
+    if (!templateMeta) return null;
+    return loadDeployTemplateConfigWithError(templateMeta.path).config;
+  }, [currentProject?.type]);
   const projectStateConfig = useMemo(
     () => (currentProject ? loadProjectConfig(currentProject.path) : null),
     [currentProject?.path, deploymentRefreshKey]
   );
-  const infraEnvironments = templateConfig?.infra?.environments ?? [];
-  const infraConfigReadiness = useMemo(
-    () => (currentProject ? evaluateInfraConfigReadiness(currentProject.path) : null),
+  const deployEnvironments = deployTemplateConfig?.environments ?? [];
+  const deployWorkspaceReadiness = useMemo(
+    () => (currentProject ? evaluateDeployWorkspaceReadiness(currentProject.path) : null),
     [currentProject?.path, deploymentRefreshKey]
   );
 
   useEffect(() => {
     if (!currentProject || menuView !== "actions" || !selectedEnvironmentId) return;
-    const readiness = evaluateInfraConfigReadiness(currentProject.path);
+    const readiness = evaluateDeployWorkspaceReadiness(currentProject.path);
     if (readiness.ready) return;
     try {
-      materializeInfraForEnvironment(currentProject.path, selectedEnvironmentId, {
+      prepareDeployWorkspaceForEnvironment(currentProject.path, selectedEnvironmentId, {
         backendRegion: config.integrations?.aws?.backend?.region,
       });
       setDeploymentRefreshKey((v) => v + 1);
     } catch (error) {
       setDeploymentError(
-        getErrorMessage(error, "Failed to generate infra configuration for this environment.")
+        getErrorMessage(error, "Failed to generate deploy workspace for this environment.")
       );
     }
   }, [currentProject, menuView, selectedEnvironmentId]);
@@ -388,7 +398,7 @@ export default function Dashboard({
       };
 
       await stopDockerIfPossible();
-      if (templateConfig?.infra) {
+      if (deployTemplateConfig) {
         const ecrDeleteResult = await deleteReleaseEcrRepository({
           projectPath: currentProject.path,
           projectName: currentProject.name,
@@ -514,13 +524,17 @@ export default function Dashboard({
       getStepStatus: (id: DeploymentStepId) => DeploymentStepStatus | undefined;
     }
   ): Promise<void> => {
+    const selectedRelease = projectStateConfig?.releaseState?.environments?.[environmentId];
+    const successNotice = selectedRelease?.selectedDeployPresetId
+      ? `Deploy completed for '${environmentId}' with preset '${selectedRelease.selectedDeployPresetId}'.`
+      : `Deploy completed for '${environmentId}'.`;
     options.setStepStatus("drift-check", "running");
     let applyStarted = false;
     const args = ["deployments", "apply", "--env", environmentId];
     if (options.confirmDrift) {
       args.push(environmentId === "prod" ? "--confirm-drift-prod" : "--confirm-drift");
     }
-    const result = await runDeploymentAction(args, `Deploy completed for '${environmentId}'.`, {
+    const result = await runDeploymentAction(args, successNotice, {
       resetLogs: options.includesPlanStep ? false : true,
       bypassCooldown: options.includesPlanStep,
       onLogLine: (line) => {
@@ -579,6 +593,17 @@ export default function Dashboard({
     confirmDrift = false
   ): Promise<void> => {
     const selectedRelease = projectStateConfig?.releaseState?.environments?.[environmentId];
+    const templateMeta = listProjectConfigs().find((entry) => entry.id === currentProject.type);
+    const deployConfig =
+      templateMeta ? loadDeployTemplateConfigWithError(templateMeta.path).config : null;
+    const usesDeployTemplate =
+      !!deployConfig?.environments.find((entry) => entry.id === environmentId);
+    if (usesDeployTemplate && !selectedRelease?.selectedDeployPresetId) {
+      setDeploymentError(
+        `Deploy preset is required for '${environmentId}'. Select a preset before deploying.`
+      );
+      return;
+    }
     if (selectedRelease?.selectedReleaseTag && !selectedRelease.selectedImageRef) {
       setDeploymentError(
         `Release '${selectedRelease.selectedReleaseTag}' is missing a validated release reference. Re-select the release to validate CI and continue.`
@@ -680,33 +705,47 @@ export default function Dashboard({
 
   const setEnvironmentReleaseSelection = (
     environmentId: string,
-    selection: { imageRef?: string; imageDigest?: string; releaseTag?: string }
+    selection: {
+      imageRef?: string;
+      imageDigest?: string;
+      releaseTag?: string;
+      deployPresetId?: string;
+    },
+    options?: {
+      replace?: boolean;
+    }
   ) => {
     if (!projectStateConfig) return;
     const nowIso = new Date().toISOString();
-    const selectedImageRef = selection.imageRef?.trim() || undefined;
-    const selectedImageDigest = selection.imageDigest?.trim() || undefined;
-    const selectedReleaseTag = selection.releaseTag?.trim() || undefined;
+    const currentSelection = projectStateConfig.releaseState?.environments?.[environmentId];
+    const nextSelection = resolveNextReleaseSelection({
+      currentSelection,
+      patch: selection,
+      selectedAt: nowIso,
+      replace: options?.replace === true,
+    });
     saveProjectConfig(currentProject.path, {
       ...projectStateConfig,
       releaseState: {
         environments: {
           ...(projectStateConfig.releaseState?.environments ?? {}),
           [environmentId]: {
-            selectedImageRef,
-            selectedImageDigest,
-            selectedReleaseTag,
-            selectedAt: nowIso,
+            ...nextSelection,
           },
         },
       },
     });
     setDeploymentRefreshKey((v) => v + 1);
     setDeploymentNotice(
-      !selectedReleaseTag && !selectedImageRef && !selectedImageDigest
+      !nextSelection.selectedReleaseTag &&
+        !nextSelection.selectedImageRef &&
+        !nextSelection.selectedImageDigest &&
+        !nextSelection.selectedDeployPresetId
         ? `Cleared release selection for '${environmentId}'.`
-        : selectedReleaseTag
-        ? `Selected release '${selectedReleaseTag}' for '${environmentId}'.`
+        : nextSelection.selectedReleaseTag
+        ? `Selected release '${nextSelection.selectedReleaseTag}' for '${environmentId}'.`
+        : nextSelection.selectedDeployPresetId
+        ? `Selected deploy preset '${nextSelection.selectedDeployPresetId}' for '${environmentId}'.`
         : `Selected release for '${environmentId}'.`
     );
   };
@@ -715,6 +754,8 @@ export default function Dashboard({
     setEditReleaseEnvironmentId(null);
     setCreateReleaseEntry(false);
     setAvailableReleaseTags([]);
+    setAvailableDeployPresets([]);
+    setSelectedEnvironmentProvider(null);
     setSuggestedReleaseTag("");
   };
 
@@ -943,6 +984,46 @@ export default function Dashboard({
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
     setAvailableReleaseTags(tags);
+
+    const templateMeta = listProjectConfigs().find((entry) => entry.id === currentProject.type);
+    if (templateMeta) {
+      const deployConfigResult = loadDeployTemplateConfigWithError(templateMeta.path);
+      if (deployConfigResult.exists && !deployConfigResult.config) {
+        setDeploymentError(
+          `Template deploy config is invalid for '${currentProject.type}'. ${deployConfigResult.error ?? ""}`.trim()
+        );
+        setSelectedEnvironmentProvider(null);
+        setAvailableDeployPresets([]);
+      } else if (deployConfigResult.config) {
+        const deployEnv = deployConfigResult.config.environments.find(
+          (entry) => entry.id === environmentId
+        );
+        if (deployEnv) {
+          setSelectedEnvironmentProvider(deployEnv.provider);
+          const presets = deployConfigResult.config.presets
+            .filter(
+              (preset) =>
+                preset.environments.includes(environmentId) &&
+                (!preset.provider || preset.provider === deployEnv.provider)
+            )
+            .map((preset) => ({
+              id: preset.id,
+              label: preset.label,
+              description: preset.description,
+            }));
+          setAvailableDeployPresets(presets);
+        } else {
+          setSelectedEnvironmentProvider(null);
+          setAvailableDeployPresets([]);
+        }
+      } else {
+        setSelectedEnvironmentProvider(null);
+        setAvailableDeployPresets([]);
+      }
+    } else {
+      setSelectedEnvironmentProvider(null);
+      setAvailableDeployPresets([]);
+    }
     setLoadingReleaseTags(false);
   };
 
@@ -1047,9 +1128,11 @@ export default function Dashboard({
     return (
       <ReleaseSelectorView
         environmentId={editReleaseEnvironmentId}
+        environmentProvider={selectedEnvironmentProvider ?? undefined}
         loadingReleaseTags={loadingReleaseTags}
         createReleaseEntry={createReleaseEntry}
         currentSelection={currentSelection}
+        availableDeployPresets={availableDeployPresets}
         availableReleaseTags={availableReleaseTags}
         suggestedReleaseTag={suggestedReleaseTag}
         error={deploymentError}
@@ -1073,10 +1156,15 @@ export default function Dashboard({
           setCreateReleaseEntry(true);
         }}
         onClear={() => {
-          setEnvironmentReleaseSelection(editReleaseEnvironmentId, {});
+          setEnvironmentReleaseSelection(editReleaseEnvironmentId, {}, { replace: true });
           closeReleaseSelector();
         }}
         onBack={closeReleaseSelector}
+        onSelectPreset={(presetId) => {
+          setEnvironmentReleaseSelection(editReleaseEnvironmentId, {
+            deployPresetId: presetId,
+          });
+        }}
         onSelectTag={(tag) => {
           void (async () => {
             setDeploymentError(null);
@@ -1109,10 +1197,17 @@ export default function Dashboard({
     if (selectedEnvironmentId) {
       const status = getEnvironmentStatus(selectedEnvironmentId);
       const canDestroy = isEnvironmentDeployed(selectedEnvironmentId);
-      const hasInfraConfig = infraConfigReadiness?.ready === true;
-      const firstTfPath = infraConfigReadiness?.tfFiles[0];
+      const hasDeployWorkspace = deployWorkspaceReadiness?.ready === true;
+      const firstTfPath = deployWorkspaceReadiness?.tfFiles[0];
       const releaseSelection =
         projectStateConfig?.releaseState?.environments?.[selectedEnvironmentId];
+      const templateMeta = listProjectConfigs().find((entry) => entry.id === currentProject.type);
+      const deployConfig = templateMeta
+        ? loadDeployTemplateConfigWithError(templateMeta.path).config
+        : null;
+      const environmentProvider = deployConfig?.environments.find(
+        (entry) => entry.id === selectedEnvironmentId
+      )?.provider;
       const envState = projectStateConfig?.deploymentState?.environments?.[selectedEnvironmentId];
       const envOutputs = projectStateConfig?.environmentOutputs?.[selectedEnvironmentId] ?? {};
       const lastSuccessfulApply = (projectStateConfig?.deploymentRunHistory ?? [])
@@ -1151,11 +1246,13 @@ export default function Dashboard({
           selectedEnvironmentId={selectedEnvironmentId}
           status={status}
           liveUrl={liveUrl}
+          environmentProvider={environmentProvider}
           canDestroy={canDestroy}
-          hasInfraConfig={hasInfraConfig}
-          infraTfCount={infraConfigReadiness?.tfFiles.length ?? 0}
+          hasDeployWorkspace={hasDeployWorkspace}
+          deployTfCount={deployWorkspaceReadiness?.tfFiles.length ?? 0}
           firstTfPath={firstTfPath}
           releaseTag={releaseSelection?.selectedReleaseTag}
+          releasePresetId={releaseSelection?.selectedDeployPresetId}
           imageOverride={releaseSelection?.selectedImageRef}
           imageDigest={releaseSelection?.selectedImageDigest}
           lastApplySummary={lastSuccessfulApply?.summary}
@@ -1190,8 +1287,8 @@ export default function Dashboard({
     }
 
     return (
-      <InfraEnvironmentsListView
-        environments={infraEnvironments}
+      <DeploymentEnvironmentsListView
+        environments={deployEnvironments}
         getEnvironmentStatus={getEnvironmentStatus}
         onDeleteApp={() => {
           setDeleteRemoteRepoOnDelete(null);

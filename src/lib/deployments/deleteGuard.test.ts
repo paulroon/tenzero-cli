@@ -72,7 +72,7 @@ describe("project delete guard", () => {
     expect(result.allowed).toBe(false);
     expect(result.blocks.length).toBe(1);
     expect(result.blocks[0]?.environmentId).toBe("test");
-    expect(result.blocks[0]?.remediation).toContain("Infra Environments");
+    expect(result.blocks[0]?.remediation).toContain("Deployment Environments");
   });
 
   test("allows delete after successful destroy after apply", () => {

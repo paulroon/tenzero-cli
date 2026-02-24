@@ -4,7 +4,7 @@
 
 This runbook defines safe recovery when lock state is stale and you must force-unlock.
 
-Interactive path: App Dashboard -> Infra Environments -> select environment.
+Interactive path: App Dashboard -> Deployment Environments -> select environment.
 
 ## Preconditions
 

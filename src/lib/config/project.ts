@@ -68,6 +68,7 @@ export type ProjectEnvironmentReleaseSelection = {
   selectedImageRef?: string;
   selectedImageDigest?: string;
   selectedReleaseTag?: string;
+  selectedDeployPresetId?: string;
   selectedAt?: string;
 };
 
@@ -322,6 +323,10 @@ function normalizeReleaseState(raw: unknown): ProjectReleaseState | undefined {
         typeof candidate.selectedImageDigest === "string" ? candidate.selectedImageDigest : undefined,
       selectedReleaseTag:
         typeof candidate.selectedReleaseTag === "string" ? candidate.selectedReleaseTag : undefined,
+      selectedDeployPresetId:
+        typeof candidate.selectedDeployPresetId === "string"
+          ? candidate.selectedDeployPresetId
+          : undefined,
       selectedAt: typeof candidate.selectedAt === "string" ? candidate.selectedAt : undefined,
     };
   }

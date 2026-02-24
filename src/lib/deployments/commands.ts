@@ -4,7 +4,6 @@ import {
   listProjectConfigs,
   loadDeployTemplateConfigWithError,
   loadConfig,
-  loadProjectBuilderConfig,
   loadProjectReleaseConfigWithError,
   type TzConfig,
 } from "@/lib/config";
@@ -12,9 +11,9 @@ import { loadProjectConfig } from "@/lib/config/project";
 import { createAwsDeployAdapter } from "@/lib/deployments/awsAdapter";
 import { persistResolvedEnvironmentOutputs } from "@/lib/deployments/capabilityPlanner";
 import {
-  materializeInfraForEnvironment,
-  type MaterializeInfraResult,
-} from "@/lib/deployments/materialize";
+  prepareDeployWorkspaceForEnvironment,
+  type PrepareDeployWorkspaceResult,
+} from "@/lib/deployments/deployWorkspace";
 import { runDeploymentsGitPreflight } from "@/lib/deployments/gitPreflight";
 import {
   assertDeploymentsModeEnabled,
@@ -49,13 +48,13 @@ type DeploymentsCommandDeps = {
   runDestroy: typeof runDestroy;
   runReport: typeof runReport;
   runReportRefreshLoop: typeof runReportRefreshLoop;
-  materializeInfra: (
+  prepareDeployWorkspace: (
     projectPath: string,
     environmentId: string,
     config: TzConfig
-  ) => MaterializeInfraResult;
+  ) => PrepareDeployWorkspaceResult;
   validatePostInterpolationArtifacts: (
-    result: MaterializeInfraResult,
+    result: PrepareDeployWorkspaceResult,
     writeLine: (text: string) => void
   ) => void;
   validatePostDeployOutputs: (args: {
@@ -84,12 +83,12 @@ const defaultDeps: DeploymentsCommandDeps = {
   runDestroy,
   runReport,
   runReportRefreshLoop,
-  materializeInfra: (projectPath: string, environmentId: string, config: TzConfig) =>
-    materializeInfraForEnvironment(projectPath, environmentId, {
+  prepareDeployWorkspace: (projectPath: string, environmentId: string, config: TzConfig) =>
+    prepareDeployWorkspaceForEnvironment(projectPath, environmentId, {
       backendRegion: config.integrations?.aws?.backend?.region,
     }),
   validatePostInterpolationArtifacts: (
-    result: MaterializeInfraResult,
+    result: PrepareDeployWorkspaceResult,
     writeLine: (text: string) => void
   ) => {
     const tfFiles = result.filePaths.filter((path) => path.endsWith(".tf"));
@@ -163,7 +162,11 @@ const defaultDeps: DeploymentsCommandDeps = {
     const templateMeta = listProjectConfigs().find((entry) => entry.id === project.type);
     if (!templateMeta) return;
     const result = loadDeployTemplateConfigWithError(templateMeta.path);
-    if (!result.exists) return;
+    if (!result.exists) {
+      throw new Error(
+        `Deployment blocked: deploy.yaml is required for template '${project.type}'.`
+      );
+    }
     if (!result.config) {
       throw new Error(
         `Deployment blocked: template deploy config is invalid for '${project.type}'. ${result.error ?? "Fix deploy.yaml and retry."}`
@@ -287,8 +290,12 @@ function persistProviderOutputs(
   if (Object.keys(providerOutputs).length === 0) return;
   const project = loadProjectConfig(projectPath);
   if (!project) return;
-  const template = loadProjectBuilderConfig(project.type);
-  const environment = template?.infra?.environments.find((entry) => entry.id === environmentId);
+  const templateMeta = listProjectConfigs().find((entry) => entry.id === project.type);
+  if (!templateMeta) return;
+  const deployConfigResult = loadDeployTemplateConfigWithError(templateMeta.path);
+  const environment = deployConfigResult.config?.environments.find(
+    (entry) => entry.id === environmentId
+  );
   if (!environment) return;
   const allowedOutputKeys = new Set(environment.outputs.map((output) => output.key));
   const filteredProviderOutputs: Record<string, unknown> = {};
@@ -388,8 +395,8 @@ export async function maybeRunDeploymentsCommand(
       });
       deps.validateDeployTemplateForProject(projectPath, deps.writeLine);
     }
-    const materialized = deps.materializeInfra(projectPath, environmentId, config);
-    deps.validatePostInterpolationArtifacts(materialized, deps.writeLine);
+    const deployWorkspace = deps.prepareDeployWorkspace(projectPath, environmentId, config);
+    deps.validatePostInterpolationArtifacts(deployWorkspace, deps.writeLine);
 
     if (action === "plan") {
       deps.writeLine(`Starting plan for '${environmentId}'...`);
