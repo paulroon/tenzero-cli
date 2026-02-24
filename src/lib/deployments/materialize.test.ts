@@ -1,11 +1,37 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { saveProjectConfig } from "@/lib/config/project";
+import { getUserConfigsDir } from "@/lib/paths";
 import { materializeInfraForEnvironment } from "@/lib/deployments/materialize";
 
 const tmpRoots: string[] = [];
+const TEST_TEMPLATE_ID = "nextjs";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const repoRoot = join(__dirname, "..", "..", "..", "..");
+const sourceTemplatePath = join(repoRoot, "tz-project-config", "nextjs", "config.yaml");
+const fixtureTemplateDir = join(getUserConfigsDir(), TEST_TEMPLATE_ID);
+const fixtureTemplatePath = join(fixtureTemplateDir, "config.yaml");
+let existingTemplateBackupDir: string | null = null;
+
+beforeEach(() => {
+  const fixtureSource = readFileSync(sourceTemplatePath, "utf-8");
+  if (existsSync(fixtureTemplateDir)) {
+    const backupRoot = mkdtempSync(join(tmpdir(), "tz-materialize-template-backup-"));
+    const backupDir = join(backupRoot, TEST_TEMPLATE_ID);
+    cpSync(fixtureTemplateDir, backupDir, { recursive: true });
+    existingTemplateBackupDir = backupDir;
+    tmpRoots.push(backupRoot);
+    rmSync(fixtureTemplateDir, { recursive: true, force: true });
+  } else {
+    existingTemplateBackupDir = null;
+  }
+  mkdirSync(fixtureTemplateDir, { recursive: true });
+  writeFileSync(fixtureTemplatePath, fixtureSource, "utf-8");
+});
 
 function createRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "tz-materialize-"));
@@ -18,6 +44,14 @@ afterEach(() => {
     const root = tmpRoots.pop();
     if (!root) continue;
     rmSync(root, { recursive: true, force: true });
+  }
+  if (existsSync(fixtureTemplateDir)) {
+    rmSync(fixtureTemplateDir, { recursive: true, force: true });
+  }
+  if (existingTemplateBackupDir && existsSync(existingTemplateBackupDir)) {
+    mkdirSync(dirname(fixtureTemplateDir), { recursive: true });
+    cpSync(existingTemplateBackupDir, fixtureTemplateDir, { recursive: true });
+    existingTemplateBackupDir = null;
   }
 });
 
