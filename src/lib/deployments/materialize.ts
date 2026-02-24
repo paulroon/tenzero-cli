@@ -152,6 +152,7 @@ resource "random_id" "suffix" {
 }
 
 ${hasAppRuntime ? `resource "aws_ecr_repository" "app" {
+  count                = local.tz_manage_ecr_repository ? 1 : 0
   name                 = "tz-\${local.tz_project_slug}-\${local.tz_environment_id}"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
@@ -200,7 +201,7 @@ resource "aws_apprunner_service" "app" {
 
     image_repository {
       image_repository_type = "ECR"
-      image_identifier      = length(trimspace(local.tz_app_image_identifier_override)) > 0 ? local.tz_app_image_identifier_override : "\${aws_ecr_repository.app.repository_url}:\${local.tz_app_image_tag}"
+      image_identifier      = length(trimspace(local.tz_app_image_identifier_override)) > 0 ? local.tz_app_image_identifier_override : "\${aws_ecr_repository.app[0].repository_url}:\${local.tz_app_image_tag}"
       image_configuration {
         port = tostring(try(local.tz_constraints.appPort, 3000))
         runtime_environment_variables = {
@@ -295,6 +296,7 @@ locals {
   tz_constraints    = jsondecode(${jsonLiteral(constraintsLiteral)})
   tz_app_image_identifier_override = try(tostring(local.tz_constraints.appImageIdentifier), "")
   tz_app_image_tag = try(tostring(local.tz_constraints.appImageTag), "")
+  tz_manage_ecr_repository = length(trimspace(local.tz_app_image_identifier_override)) == 0
   tz_enable_app_runner    = try(tobool(local.tz_constraints.enableAppRunner), false) && (length(trimspace(local.tz_app_image_identifier_override)) > 0 || length(trimspace(local.tz_app_image_tag)) > 0)
 }
 
