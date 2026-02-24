@@ -19,6 +19,19 @@ type WorkflowRunsResponse = {
   workflow_runs?: WorkflowRun[];
 };
 
+type WorkflowJob = {
+  name: string;
+  steps?: Array<{
+    name: string;
+    status: "queued" | "in_progress" | "completed";
+    conclusion: string | null;
+  }>;
+};
+
+type WorkflowJobsResponse = {
+  jobs?: WorkflowJob[];
+};
+
 function parseGitHubRepoFromOrigin(originUrl: string): RepoRef | null {
   const sshMatch = originUrl.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i);
   if (sshMatch?.[1] && sshMatch[2]) {
@@ -153,6 +166,24 @@ export async function resolveReleaseImageForTag(args: {
       runUrl: run.html_url,
     };
   }
+  const jobs = await githubFetch<WorkflowJobsResponse>(
+    token,
+    `https://api.github.com/repos/${repo.owner}/${repo.repo}/actions/runs/${run.id}/jobs?per_page=50`
+  );
+  const allSteps = (jobs.jobs ?? []).flatMap((job) => job.steps ?? []);
+  const buildPushStep = allSteps.find((step) => step.name === "Build and push release image");
+  if (buildPushStep && buildPushStep.conclusion !== "success") {
+    const validateStep = allSteps.find((step) => step.name === "Validate release vars");
+    const varsHint =
+      validateStep?.conclusion === "success"
+        ? "Release workflow likely skipped image publish because required repo variables are unset (__SET_ME__). Configure AWS_REGION, AWS_ACCOUNT_ID, AWS_OIDC_ROLE_ARN, and ECR_REPOSITORY."
+        : "Release workflow did not publish an image for this tag.";
+    return {
+      ok: false,
+      message: varsHint,
+      runUrl: run.html_url,
+    };
+  }
 
   const awsRegion =
     (await getRepoVariable(token, repo, "AWS_REGION")) ??
@@ -219,6 +250,19 @@ export async function resolveReleaseImageForTag(args: {
   );
   const imageDigest = (digestResult.stdout ?? "").trim();
   if (digestResult.exitCode !== 0 || !imageDigest || imageDigest === "None") {
+    const digestError = `${digestResult.stderr ?? ""} ${digestResult.stdout ?? ""}`;
+    if (
+      digestError.includes("ImageNotFoundException") ||
+      digestError.includes("imageDigest='null'")
+    ) {
+      return {
+        ok: false,
+        message:
+          `Release '${args.tag}' completed but no image was published to ECR. ` +
+          "Check the GitHub Actions run and ensure release vars are fully configured.",
+        runUrl: run.html_url,
+      };
+    }
     return {
       ok: false,
       message:
