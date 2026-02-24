@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
 import { Alert, TextInput } from "@inkjs/ui";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -10,6 +10,7 @@ import {
   DEFAULT_EDITOR,
   type TzConfig,
 } from "@/lib/config";
+import WelcomeScreen from "@/ui/components/WelcomeScreen";
 
 const DEFAULT_PROJECT_DIR = join(homedir(), "Projects");
 
@@ -38,6 +39,7 @@ type Props = {
 };
 
 export default function ConfigSetup({ onComplete, initialConfig }: Props) {
+  const [showWelcomeScreen, setShowWelcomeScreen] = useState(!initialConfig);
   const [name, setName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [projectDirError, setProjectDirError] = useState<string | null>(null);
@@ -95,6 +97,19 @@ export default function ConfigSetup({ onComplete, initialConfig }: Props) {
 
   const isEditMode = !!initialConfig;
   const showEditorStep = isEditMode && projectDirResolved !== null;
+
+  useInput(
+    (_input, key) => {
+      if (key.return) {
+        setShowWelcomeScreen(false);
+      }
+    },
+    { isActive: showWelcomeScreen }
+  );
+
+  if (showWelcomeScreen) {
+    return <WelcomeScreen />;
+  }
 
   if (name === null && !initialConfig) {
     return (
