@@ -33,6 +33,7 @@ import { waitForReleaseWorkflowCompletion } from "@/lib/github/actionsMonitor";
 import { maybeDeleteGithubRepoForProject } from "@/lib/github/repoLifecycle";
 import { resolveReleaseImageForTag } from "@/lib/github/releaseValidation";
 import { bootstrapGithubRepoVariables } from "@/lib/github/repoVariables";
+import { ensureReleaseEcrRepository } from "@/lib/github/releaseDependencies";
 import App from "@/ui/App";
 import { DeleteProjectView } from "@/ui/dashboard/DeleteProjectView";
 import { ReleaseBuildMonitorView } from "@/ui/dashboard/ReleaseBuildMonitorView";
@@ -676,8 +677,28 @@ export default function Dashboard({
     targetEnvironmentId: string,
     requestedTag: string
   ) => {
+    setReleaseBuildMonitor({
+      tag: requestedTag,
+      stage: "waiting",
+      message: "Preparing release dependencies (ECR repository)...",
+    });
+    const dependencyResult = await ensureReleaseEcrRepository({
+      projectPath: currentProject.path,
+      projectName: currentProject.name,
+      awsRegionHint: config.integrations?.aws?.backend?.region,
+    });
+    if (!dependencyResult.ok) {
+      setReleaseBuildMonitor({
+        tag: requestedTag,
+        stage: "failed",
+        message: dependencyResult.message,
+      });
+      return;
+    }
+
     const result = await createReleaseTagForProject(currentProject.path, requestedTag);
     if (!result.ok) {
+      setReleaseBuildMonitor(null);
       setDeploymentError(result.message);
       return;
     }
