@@ -14,6 +14,11 @@ import { ensureGithubOriginForProject } from "@/lib/github/repoLifecycle";
 
 const INITIAL_COMMIT_MESSAGE = "Initial Tz Project setup";
 const FINALIZE_STATUS_PATH = [".tz", "finalize-status.json"];
+const TENZERO_GITIGNORE_ENTRIES = [
+  TZ_PROJECT_CONFIG_FILENAME,
+  ".tz/finalize-status.json",
+  ".tz/infra/",
+] as const;
 
 function isDockerizedValue(value: unknown): boolean {
   return value === "yes" || value === "true";
@@ -64,17 +69,18 @@ export async function finalizeTzProjectSetup(
   }
 
   const gitignorePath = join(projectPath, ".gitignore");
+  const tenZeroIgnoreBlock = `\n###> TenZero ###\n${TENZERO_GITIGNORE_ENTRIES.join("\n")}\n###< TenZero ###\n`;
   if (existsSync(gitignorePath)) {
     const content = readFileSync(gitignorePath, "utf-8");
-    if (!content.includes(TZ_PROJECT_CONFIG_FILENAME)) {
-      const ignoreEntry = `\n###> TenZero ###\n${TZ_PROJECT_CONFIG_FILENAME}\n###< TenZero ###\n`;
+    const hasAllEntries = TENZERO_GITIGNORE_ENTRIES.every((entry) => content.includes(entry));
+    if (!hasAllEntries) {
       const entry = content.endsWith("\n")
-        ? `${ignoreEntry}\n`
-        : `\n${ignoreEntry}\n`;
+        ? `${tenZeroIgnoreBlock}\n`
+        : `\n${tenZeroIgnoreBlock}\n`;
       writeFileSync(gitignorePath, content + entry, "utf-8");
     }
   } else {
-    writeFileSync(gitignorePath, `${TZ_PROJECT_CONFIG_FILENAME}\n`, "utf-8");
+    writeFileSync(gitignorePath, `${TENZERO_GITIGNORE_ENTRIES.join("\n")}\n`, "utf-8");
   }
 
   saveProjectConfig(projectPath, {
