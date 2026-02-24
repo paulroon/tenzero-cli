@@ -258,6 +258,7 @@ resource "aws_apprunner_service" "app" {
         port = tostring(try(local.tz_constraints.appPort, 3000))
         runtime_environment_variables = {
           NODE_ENV = "production"
+          PORT     = tostring(try(local.tz_constraints.appPort, 3000))
         }
         runtime_environment_secrets = merge(
           ${hasPostgres ? `{ DATABASE_URL = aws_secretsmanager_secret.database_url.arn }` : "{}"},
