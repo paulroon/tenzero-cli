@@ -724,6 +724,18 @@ export default function Dashboard({
       selectedAt: nowIso,
       replace: options?.replace === true,
     });
+    const isUnchanged =
+      (currentSelection?.selectedImageRef ?? undefined) ===
+        (nextSelection.selectedImageRef ?? undefined) &&
+      (currentSelection?.selectedImageDigest ?? undefined) ===
+        (nextSelection.selectedImageDigest ?? undefined) &&
+      (currentSelection?.selectedReleaseTag ?? undefined) ===
+        (nextSelection.selectedReleaseTag ?? undefined) &&
+      (currentSelection?.selectedDeployPresetId ?? undefined) ===
+        (nextSelection.selectedDeployPresetId ?? undefined);
+    if (isUnchanged) {
+      return;
+    }
     saveProjectConfig(currentProject.path, {
       ...projectStateConfig,
       releaseState: {
