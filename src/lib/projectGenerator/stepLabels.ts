@@ -51,7 +51,7 @@ export function getStepLabel(
       return `Wait for ${url}`;
     }
     case "finalize":
-      return "Finalize (git init, .tzconfig)";
+      return "Finalize project setup (initialize Git, commit scaffold, configure release)";
     default:
       return step.type;
   }

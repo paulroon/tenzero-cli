@@ -253,7 +253,9 @@ jobs:
 async function runGit(cwd: string, args: string[]): Promise<void> {
   await callShell("git", args, {
     cwd,
-    stdin: "inherit",
+    stdin: "ignore",
+    collect: true,
+    quiet: true,
     throwOnNonZero: true,
   });
 }
