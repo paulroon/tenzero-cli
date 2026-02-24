@@ -5,6 +5,11 @@ type GithubUserResponse = {
   login?: string;
 };
 
+const GITHUB_OIDC_PROVIDER_URL = "https://token.actions.githubusercontent.com";
+const GITHUB_OIDC_PROVIDER_HOST = "token.actions.githubusercontent.com";
+const GITHUB_OIDC_CLIENT_ID = "sts.amazonaws.com";
+const GITHUB_OIDC_THUMBPRINT = "6938fd4d98bab03faadb97b34396831e3780aea1";
+
 function sanitizeRoleSuffix(input: string): string {
   return input
     .toLowerCase()
@@ -78,13 +83,63 @@ export async function ensureGithubOidcRoleForDeployments(args: {
   }
 
   const roleName = `tz-gha-release-${sanitizeRoleSuffix(owner) || "owner"}`;
+  const providerArn = `arn:aws:iam::${account.stdout}:oidc-provider/${GITHUB_OIDC_PROVIDER_HOST}`;
+
+  const getProvider = await runAws([
+    "iam",
+    "get-open-id-connect-provider",
+    "--open-id-connect-provider-arn",
+    providerArn,
+    "--profile",
+    args.profile,
+    "--region",
+    args.region,
+  ]);
+  if (getProvider.exitCode !== 0) {
+    const missingProvider =
+      getProvider.stderr.includes("NoSuchEntity") ||
+      getProvider.stderr.includes("cannot be found");
+    if (!missingProvider) {
+      return {
+        ok: false,
+        message:
+          getProvider.stderr ||
+          getProvider.stdout ||
+          "Failed checking GitHub OIDC provider in AWS IAM.",
+      };
+    }
+    const createProvider = await runAws([
+      "iam",
+      "create-open-id-connect-provider",
+      "--url",
+      GITHUB_OIDC_PROVIDER_URL,
+      "--client-id-list",
+      GITHUB_OIDC_CLIENT_ID,
+      "--thumbprint-list",
+      GITHUB_OIDC_THUMBPRINT,
+      "--profile",
+      args.profile,
+      "--region",
+      args.region,
+    ]);
+    if (createProvider.exitCode !== 0) {
+      return {
+        ok: false,
+        message:
+          createProvider.stderr ||
+          createProvider.stdout ||
+          "Failed creating GitHub OIDC provider in AWS IAM.",
+      };
+    }
+  }
+
   const trustPolicy = JSON.stringify({
     Version: "2012-10-17",
     Statement: [
       {
         Effect: "Allow",
         Principal: {
-          Federated: `arn:aws:iam::${account.stdout}:oidc-provider/token.actions.githubusercontent.com`,
+          Federated: providerArn,
         },
         Action: "sts:AssumeRoleWithWebIdentity",
         Condition: {

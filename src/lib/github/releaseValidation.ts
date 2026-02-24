@@ -131,6 +131,8 @@ export async function resolveReleaseImageForTag(args: {
       runUrl?: string;
     }
 > {
+  const startedAtMs = Date.now();
+  const matchingWindowStartMs = startedAtMs - 60_000;
   const token = getSecretValue("GITHUB_TOKEN");
   if (!token) {
     return { ok: false, message: "Missing GITHUB_TOKEN. Cannot validate release build status." };
@@ -147,7 +149,11 @@ export async function resolveReleaseImageForTag(args: {
     `https://api.github.com/repos/${repo.owner}/${repo.repo}/actions/runs?event=push&per_page=100`
   );
   const run = (runs.workflow_runs ?? [])
-    .filter((item) => item.head_sha === tagSha)
+    .filter(
+      (item) =>
+        item.head_sha === tagSha &&
+        new Date(item.created_at).getTime() >= matchingWindowStartMs
+    )
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
   if (!run) {
     return { ok: false, message: `No GitHub Actions run found for tag '${args.tag}'.` };

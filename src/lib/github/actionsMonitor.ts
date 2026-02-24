@@ -109,6 +109,8 @@ export async function waitForReleaseWorkflowCompletion(args: {
 }): Promise<{ ok: true; runUrl?: string } | { ok: false; message: string; runUrl?: string }> {
   const timeoutMs = args.timeoutMs ?? 15 * 60 * 1000;
   const pollIntervalMs = args.pollIntervalMs ?? 3000;
+  const startedAtMs = Date.now();
+  const matchingWindowStartMs = startedAtMs - 60_000;
   const token = getSecretValue("GITHUB_TOKEN");
   if (!token) {
     return {
@@ -134,7 +136,16 @@ export async function waitForReleaseWorkflowCompletion(args: {
       token,
       `https://api.github.com/repos/${repo.owner}/${repo.repo}/actions/runs?event=push&per_page=50`
     );
-    const run = (runs.workflow_runs ?? []).find((item) => item.head_sha === tagSha);
+    const matchingRuns = (runs.workflow_runs ?? [])
+      .filter(
+        (item) =>
+          item.head_sha === tagSha &&
+          new Date(item.created_at).getTime() >= matchingWindowStartMs
+      )
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const run =
+      matchingRuns.find((item) => item.status !== "completed") ??
+      matchingRuns[0];
     if (!run) {
       args.onUpdate?.({
         stage: "waiting",
