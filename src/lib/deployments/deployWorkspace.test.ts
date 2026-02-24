@@ -20,6 +20,20 @@ pipeline:
   - type: run
     command: "echo noop"
 `;
+const deployFixtureMainTfSource = `locals {
+  tz_environment_id = "{{ tz.environment.id }}"
+  tz_provider_id    = "{{ tz.provider.id }}"
+  tz_release_tag    = "{{ tz.release.tag }}"
+  tz_release_ref    = "{{ tz.release.imageRef }}"
+  tz_app_port       = "{{ tz.constraints.appPort }}"
+  tz_region         = "{{ tz.constraints.region }}"
+  tz_runner_cpu     = "{{ tz.constraints.appRunnerCpu }}"
+}
+
+output "APP_BASE_URL" {
+  value = "https://\${local.tz_environment_id}.example.com"
+}
+`;
 const deployFixtureSource = `version: "2"
 providers:
   - id: aws-primary
@@ -84,6 +98,9 @@ beforeEach(() => {
   mkdirSync(fixtureTemplateDir, { recursive: true });
   writeFileSync(fixtureTemplatePath, fixtureSource, "utf-8");
   writeFileSync(fixtureDeployPath, deployFixtureSource, "utf-8");
+  const fixtureDriverDir = join(fixtureTemplateDir, "deployments", "opentofu");
+  mkdirSync(fixtureDriverDir, { recursive: true });
+  writeFileSync(join(fixtureDriverDir, "main.tf"), deployFixtureMainTfSource, "utf-8");
 });
 
 function createRoot(): string {
@@ -129,15 +146,10 @@ describe("deploy workspace preparation", () => {
 
     const contents = readFileSync(mainTfPath, "utf-8");
     expect(contents).toContain('output "APP_BASE_URL"');
-    expect(contents).toContain('output "DATABASE_URL"');
-    expect(contents).toContain('output "NEXTAUTH_SECRET"');
-    expect(contents).toContain('resource "aws_ecr_repository" "app"');
-    expect(contents).toContain('resource "aws_ssm_parameter" "app_base_url"');
-    expect(contents).toContain('resource "aws_secretsmanager_secret" "nextauth_secret"');
-    expect(contents).toContain('resource "aws_secretsmanager_secret" "database_url"');
-    expect(contents).toContain('variable "tz_environment_id"');
-    expect(contents).toContain("tz_environment_id = var.tz_environment_id");
-    expect(contents).toContain('\\"region\\":\\"eu-west-2\\"');
+    expect(contents).toContain('tz_environment_id = "prod"');
+    expect(contents).toContain('tz_provider_id    = "aws-primary"');
+    expect(contents).toContain('tz_app_port       = "9000"');
+    expect(contents).toContain('tz_region         = "eu-west-2"');
   });
 
   test("fails fast when env does not exist", () => {
@@ -189,12 +201,11 @@ describe("deploy workspace preparation", () => {
     if (!mainTfPath) return;
 
     const contents = readFileSync(mainTfPath, "utf-8");
-    expect(contents).toContain('\\"enableAppRunner\\":true');
     expect(contents).toContain(
-      '\\"appImageTag\\":\\"v0.1.2\\"'
+      'tz_release_tag    = "v0.1.2"'
     );
     expect(contents).toContain(
-      '\\"appImageIdentifier\\":\\"206414186603.dkr.ecr.eu-west-2.amazonaws.com/tz-app-prod@sha256:abc123\\"'
+      'tz_release_ref    = "206414186603.dkr.ecr.eu-west-2.amazonaws.com/tz-app-prod@sha256:abc123"'
     );
   });
 
@@ -219,10 +230,7 @@ describe("deploy workspace preparation", () => {
     expect(mainTfPath).toBeDefined();
     if (!mainTfPath) return;
     const contents = readFileSync(mainTfPath, "utf-8");
-    expect(contents).toContain('\\"appRunnerCpu\\":2048');
-    expect(contents).toContain('\\"appRunnerMemory\\":4096');
-    expect(contents).toContain('\\"appRunnerMinSize\\":2');
-    expect(contents).toContain('\\"appRunnerMaxSize\\":8');
+    expect(contents).toContain('tz_runner_cpu     = "2048"');
   });
 
   test("auto-selects and persists default deploy preset when not set", () => {

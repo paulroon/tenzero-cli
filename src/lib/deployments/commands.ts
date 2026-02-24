@@ -14,6 +14,7 @@ import {
   prepareDeployWorkspaceForEnvironment,
   type PrepareDeployWorkspaceResult,
 } from "@/lib/deployments/deployWorkspace";
+import { validateDeployTemplateContract } from "@/lib/deployments/templateContract";
 import { runDeploymentsGitPreflight } from "@/lib/deployments/gitPreflight";
 import {
   assertDeploymentsModeEnabled,
@@ -172,6 +173,11 @@ const defaultDeps: DeploymentsCommandDeps = {
         `Deployment blocked: template deploy config is invalid for '${project.type}'. ${result.error ?? "Fix deploy.yaml and retry."}`
       );
     }
+    validateDeployTemplateContract({
+      templateType: project.type,
+      templateConfigPath: templateMeta.path,
+      deployConfig: result.config,
+    });
     writeLine(`Deploy contract validated for template '${project.type}'.`);
   },
   getCwd: () => cwd(),
@@ -373,6 +379,7 @@ export async function maybeRunDeploymentsCommand(
   }
   const projectPath = asStringArg(flags, "project") ?? deps.getCwd();
   const releaseConfigResult = deps.loadReleaseConfig(projectPath);
+  let requiredReleaseConfig: NonNullable<typeof releaseConfigResult.config> | null = null;
   if (action !== "destroy") {
     if (releaseConfigResult.error) {
       deps.writeLine(releaseConfigResult.error);
@@ -384,14 +391,20 @@ export async function maybeRunDeploymentsCommand(
       );
       return { handled: true, exitCode: 1 };
     }
+    requiredReleaseConfig = releaseConfigResult.config;
   }
   const adapter = deps.createAdapter(config);
 
   try {
     if (action !== "destroy") {
+      if (!requiredReleaseConfig) {
+        throw new Error(
+          "Deployment blocked: release config not found. Create .tz/release.yaml with version and tagPrefix first."
+        );
+      }
       await deps.runGitPreflight({
         projectPath,
-        releaseConfig: releaseConfigResult.config,
+        releaseConfig: requiredReleaseConfig,
       });
       deps.validateDeployTemplateForProject(projectPath, deps.writeLine);
     }
