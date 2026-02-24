@@ -76,7 +76,10 @@ export async function ensureReleaseEcrRepository(args: {
   projectPath: string;
   projectName: string;
   awsRegionHint?: string;
-}): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
+}): Promise<
+  | { ok: true; message: string; ecrStatus: "created" | "already-exists" }
+  | { ok: false; message: string }
+> {
   const token = getSecretValue("GITHUB_TOKEN");
   if (!token) {
     return { ok: false, message: "Missing GITHUB_TOKEN. Cannot ensure release repository." };
@@ -125,6 +128,7 @@ export async function ensureReleaseEcrRepository(args: {
     return {
       ok: true,
       message: `Release repository '${ecrRepository}' is ready in ${awsRegion}.`,
+      ecrStatus: "already-exists",
     };
   }
 
@@ -175,5 +179,6 @@ export async function ensureReleaseEcrRepository(args: {
   return {
     ok: true,
     message: `Created release repository '${ecrRepository}' in ${awsRegion}.`,
+    ecrStatus: "created",
   };
 }

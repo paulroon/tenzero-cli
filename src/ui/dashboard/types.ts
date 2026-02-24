@@ -19,6 +19,7 @@ export type ReleaseBuildMonitorState = {
   stage: "pushing" | "waiting" | "running" | "completed" | "failed";
   message: string;
   runUrl?: string;
+  preflightSummary?: string;
 };
 
 export type ReleaseSelection = {

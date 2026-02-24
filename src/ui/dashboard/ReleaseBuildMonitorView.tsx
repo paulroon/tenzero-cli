@@ -27,6 +27,7 @@ export function ReleaseBuildMonitorView({ monitor, onClose }: Props) {
           {monitor.message}
         </Alert>
       )}
+      {monitor.preflightSummary && <Text dimColor>Preflight: {monitor.preflightSummary}</Text>}
       {monitor.runUrl && <Text dimColor>GitHub Actions run: {monitor.runUrl}</Text>}
       {isFinished && (
         <Select

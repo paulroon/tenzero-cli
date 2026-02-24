@@ -677,6 +677,7 @@ export default function Dashboard({
     targetEnvironmentId: string,
     requestedTag: string
   ) => {
+    let preflightSummary: string | undefined;
     setReleaseBuildMonitor({
       tag: requestedTag,
       stage: "waiting",
@@ -695,6 +696,10 @@ export default function Dashboard({
       });
       return;
     }
+    preflightSummary =
+      dependencyResult.ecrStatus === "created"
+        ? "ECR repo: created"
+        : "ECR repo: already exists";
 
     const result = await createReleaseTagForProject(currentProject.path, requestedTag);
     if (!result.ok) {
@@ -707,6 +712,7 @@ export default function Dashboard({
       tag: result.tag,
       stage: "pushing",
       message: `Publishing release '${result.tag}' to origin...`,
+      preflightSummary,
     });
     const pushResult = await pushReleaseTagToOrigin(currentProject.path, result.tag);
     if (!pushResult.ok) {
@@ -714,6 +720,7 @@ export default function Dashboard({
         tag: result.tag,
         stage: "failed",
         message: pushResult.message,
+        preflightSummary,
       });
       return;
     }
@@ -727,6 +734,7 @@ export default function Dashboard({
           stage: update.stage === "completed" ? "completed" : update.stage,
           message: update.message,
           runUrl: update.runUrl,
+          preflightSummary,
         });
       },
     });
@@ -736,6 +744,7 @@ export default function Dashboard({
         stage: "failed",
         message: monitorResult.message,
         runUrl: monitorResult.runUrl,
+        preflightSummary,
       });
       return;
     }
@@ -766,6 +775,7 @@ export default function Dashboard({
           stage: "failed",
           message: `${resolvedImage.message} ${bootstrapResult.message ?? "GitHub repo variable bootstrap was skipped."}`,
           runUrl: resolvedImage.runUrl,
+          preflightSummary,
         });
         return;
       }
@@ -776,6 +786,7 @@ export default function Dashboard({
         stage: "failed",
         message: resolvedImage.message,
         runUrl: resolvedImage.runUrl,
+        preflightSummary,
       });
       return;
     }
@@ -790,6 +801,7 @@ export default function Dashboard({
       stage: "completed",
       message: "Release build is ready. Release reference validated for deployment.",
       runUrl: resolvedImage.runUrl ?? monitorResult.runUrl,
+      preflightSummary,
     });
     setDeploymentLogs((prev) => [...prev.slice(-39), `Created release '${result.tag}'.`]);
     closeReleaseSelector();
