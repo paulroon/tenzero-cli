@@ -2,6 +2,7 @@ import { callShell } from "@/lib/shell";
 import {
   loadProjectReleaseConfigWithError,
 } from "@/lib/config";
+import { getSecretValue } from "@/lib/secrets";
 
 type Result =
   | { ok: true; tag: string; created: boolean }
@@ -77,6 +78,37 @@ async function ensureCleanGitState(projectPath: string): Promise<{ ok: true } | 
     return { ok: false, message: "Deployment blocked: use a branch or tagged release." };
   }
   return { ok: true };
+}
+
+type RepoRef = {
+  owner: string;
+  repo: string;
+};
+
+function parseGitHubRepoFromOrigin(originUrl: string): RepoRef | null {
+  const sshMatch = originUrl.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i);
+  if (sshMatch?.[1] && sshMatch[2]) {
+    return { owner: sshMatch[1], repo: sshMatch[2] };
+  }
+  const httpsMatch = originUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i);
+  if (httpsMatch?.[1] && httpsMatch[2]) {
+    return { owner: httpsMatch[1], repo: httpsMatch[2] };
+  }
+  return null;
+}
+
+function buildGithubOriginUrl(owner: string, repo: string): string {
+  return `https://github.com/${owner}/${repo}.git`;
+}
+
+function buildGithubAuthOriginUrl(owner: string, repo: string, token: string): string {
+  return `https://x-access-token:${encodeURIComponent(token)}@github.com/${owner}/${repo}.git`;
+}
+
+function sanitizeGitMessage(raw: string, token: string): string {
+  if (!raw) return raw;
+  const encodedToken = encodeURIComponent(token);
+  return raw.split(token).join("[REDACTED]").split(encodedToken).join("[REDACTED]");
 }
 
 export async function suggestNextReleaseTag(projectPath: string): Promise<SuggestResult> {
@@ -175,12 +207,55 @@ export async function pushReleaseTagToOrigin(
         "Release config not found. Create .tz/release.yaml with version and tagPrefix first.",
     };
   }
+  const origin = await runGit(projectPath, ["remote", "get-url", "origin"]);
+  if (origin.exitCode !== 0 || origin.stdout.length === 0) {
+    return { ok: false, message: "No git origin configured for this project." };
+  }
+  const repo = parseGitHubRepoFromOrigin(origin.stdout);
+  if (!repo) {
+    return { ok: false, message: "Git origin is not a GitHub repository URL." };
+  }
+  const token = getSecretValue("GITHUB_TOKEN");
+  if (!token) {
+    return {
+      ok: false,
+      message: "Missing GITHUB_TOKEN. Cannot push release non-interactively.",
+    };
+  }
+
+  const cleanOriginUrl = buildGithubOriginUrl(repo.owner, repo.repo);
+  const authOriginUrl = buildGithubAuthOriginUrl(repo.owner, repo.repo, token);
+  const setAuthOrigin = await runGit(projectPath, ["remote", "set-url", "origin", authOriginUrl]);
+  if (setAuthOrigin.exitCode !== 0) {
+    return {
+      ok: false,
+      message:
+        sanitizeGitMessage(setAuthOrigin.stderr || setAuthOrigin.stdout || "", token) ||
+        "Failed to configure authenticated git origin.",
+    };
+  }
+
   const pushResult = await runGit(projectPath, ["push", "origin", tag]);
+  const restoreOrigin = await runGit(projectPath, [
+    "remote",
+    "set-url",
+    "origin",
+    cleanOriginUrl,
+  ]);
+  if (restoreOrigin.exitCode !== 0) {
+    return {
+      ok: false,
+      message:
+        sanitizeGitMessage(restoreOrigin.stderr || restoreOrigin.stdout || "", token) ||
+        "Release push succeeded, but failed to restore git origin URL.",
+    };
+  }
   if (pushResult.exitCode !== 0) {
     return {
       ok: false,
       message:
-        pushResult.stderr || pushResult.stdout || `Failed to push release tag '${tag}' to origin.`,
+        sanitizeGitMessage(pushResult.stderr || pushResult.stdout || "", token) ||
+        `Failed to push release tag '${tag}' to origin.`,
     };
   }
   return { ok: true };

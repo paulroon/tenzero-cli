@@ -11,6 +11,21 @@ type GitHubUser = {
   login?: string;
 };
 
+function buildGithubOriginUrl(owner: string, repo: string): string {
+  return `https://github.com/${owner}/${repo}.git`;
+}
+
+function buildGithubAuthOriginUrl(owner: string, repo: string, token: string): string {
+  const encodedToken = encodeURIComponent(token);
+  return `https://x-access-token:${encodedToken}@github.com/${owner}/${repo}.git`;
+}
+
+function sanitizeGitMessage(raw: string, token: string): string {
+  if (!raw) return raw;
+  const encodedToken = encodeURIComponent(token);
+  return raw.split(token).join("[REDACTED]").split(encodedToken).join("[REDACTED]");
+}
+
 function toRepoName(name: string): string {
   const normalized = name
     .toLowerCase()
@@ -127,7 +142,7 @@ export async function ensureGithubOriginForProject(args: {
     };
   }
 
-  const originUrl = `https://github.com/${owner}/${repoName}.git`;
+  const originUrl = buildGithubOriginUrl(owner, repoName);
   const addOrigin = await runGit(args.projectPath, ["remote", "add", "origin", originUrl]);
   if (addOrigin.exitCode !== 0) {
     return {
@@ -137,11 +152,42 @@ export async function ensureGithubOriginForProject(args: {
   }
 
   await runGit(args.projectPath, ["branch", "-M", "main"]);
+  const authenticatedOriginUrl = buildGithubAuthOriginUrl(owner, repoName, token);
+  const setAuthOrigin = await runGit(args.projectPath, [
+    "remote",
+    "set-url",
+    "origin",
+    authenticatedOriginUrl,
+  ]);
+  if (setAuthOrigin.exitCode !== 0) {
+    return {
+      configured: false,
+      message:
+        sanitizeGitMessage(setAuthOrigin.stderr || setAuthOrigin.stdout || "", token) ||
+        "Failed to configure authenticated git origin.",
+    };
+  }
   const pushMain = await runGit(args.projectPath, ["push", "-u", "origin", "main"]);
+  const restoreOrigin = await runGit(args.projectPath, [
+    "remote",
+    "set-url",
+    "origin",
+    originUrl,
+  ]);
+  if (restoreOrigin.exitCode !== 0) {
+    return {
+      configured: false,
+      message:
+        sanitizeGitMessage(restoreOrigin.stderr || restoreOrigin.stdout || "", token) ||
+        "Initial push succeeded, but failed to restore git origin URL.",
+    };
+  }
   if (pushMain.exitCode !== 0) {
     return {
       configured: false,
-      message: pushMain.stderr || pushMain.stdout || "Failed to push initial branch to origin.",
+      message:
+        sanitizeGitMessage(pushMain.stderr || pushMain.stdout || "", token) ||
+        "Failed to push initial branch to origin.",
     };
   }
   return {
